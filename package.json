@@ -1,0 +1,24 @@
+{
+  "name": "backend",
+  "version": "1.0.0",
+  "description": "hahahahahahahah\r what is this?",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/2025-Summer-Bootcamp-TeamF/backend.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/2025-Summer-Bootcamp-TeamF/backend/issues"
+  },
+  "homepage": "https://github.com/2025-Summer-Bootcamp-TeamF/backend#readme",
+  "dependencies": {
+    "express": "^5.1.0"
+  }
+}
