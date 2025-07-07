@@ -2,10 +2,10 @@ name: Backend CI
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [ "main", "develop" ]
   pull_request:
-    branches: [ "main" ]
-
+    branches: [ "main", "develop" ]
+    
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -19,6 +19,9 @@ jobs:
         with:
           node-version: 18.x
 
-      - name: Test
-      - run: npm ci
-      - run: npm test
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run tests
+        run: npm test
+
