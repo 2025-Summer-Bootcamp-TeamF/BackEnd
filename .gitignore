@@ -1,0 +1,11 @@
+# node_modules 폴더 제외(이거 넣으면 ㄹㅇ 큰일남)
+node_modules
+
+# 환경 변수 파일 제외 (보안)
+.env
+
+# 로그 파일 제외
+npm-debug.log
+
+# macOS 시스템 파일 제외
+.DS_Store
