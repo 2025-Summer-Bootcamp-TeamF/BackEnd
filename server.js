@@ -39,6 +39,9 @@ app.use(passport.session());
 const authRoutes = require('./routes/auth');
 app.use('/auth', authRoutes);
 
+const videoRoutes = require('./routes/videos');
+app.use('/api', videoRoutes);
+
 // 기본 라우터
 app.get('/', (req, res) => {
   res.send('Backend server is running!');

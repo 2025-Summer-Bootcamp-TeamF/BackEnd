@@ -5,6 +5,16 @@ const { authenticateToken } = require('../middleware/auth');
 
 const router = express.Router();
 
+/*
+  [Auth 관련 엔드포인트]
+  GET    /auth/google            - 구글 로그인 시작
+  GET    /auth/google/callback   - 구글 콜백 처리
+  GET    /auth/failure           - 인증 실패 처리
+  POST   /auth/verify            - JWT 토큰 검증
+  POST   /auth/refresh           - JWT 토큰 갱신
+  POST   /auth/logout            - 로그아웃
+*/
+
 // Google OAuth 로그인 시작
 router.get('/google', passport.authenticate('google', {
   scope: ['profile', 'email']
@@ -36,84 +46,8 @@ router.get('/failure', (req, res) => {
 });
 
 // JWT 토큰 검증
-router.post('/verify', (req, res) => {
-  const { token } = req.body;
-  
-  if (!token) {
-    return res.status(400).json({
-      success: false,
-      message: 'Token is required'
-    });
-  }
-
-  const user = verifyToken(token);
-  if (!user) {
-    return res.status(401).json({
-      success: false,
-      message: 'Invalid or expired token'
-    });
-  }
-
-  res.json({
-    success: true,
-    user: {
-      id: user.id,
-      email: user.email,
-      name: user.name,
-      picture: user.picture,
-      provider: user.provider
-    }
-  });
-});
 
 // 토큰 갱신
-router.post('/refresh', (req, res) => {
-  const { token } = req.body;
-  
-  if (!token) {
-    return res.status(400).json({
-      success: false,
-      message: 'Token is required'
-    });
-  }
-
-  const user = verifyToken(token);
-  if (!user) {
-    return res.status(401).json({
-      success: false,
-      message: 'Invalid token'
-    });
-  }
-
-  // 새로운 토큰 생성
-  const newToken = generateToken({
-    id: user.id,
-    email: user.email,
-    name: user.name,
-    picture: user.picture,
-    provider: user.provider
-  });
-
-  res.json({
-    success: true,
-    token: newToken,
-    user: {
-      id: user.id,
-      email: user.email,
-      name: user.name,
-      picture: user.picture,
-      provider: user.provider
-    }
-  });
-});
-
-// 보호된 라우트 예시
-router.get('/profile', authenticateToken, (req, res) => {
-  res.json({
-    success: true,
-    user: req.user
-  });
-});
 
 // 로그아웃 (클라이언트에서 토큰 삭제)
 router.post('/logout', (req, res) => {
