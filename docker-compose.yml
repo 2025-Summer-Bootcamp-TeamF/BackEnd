@@ -9,10 +9,16 @@ services:
       - "3000:3000"
     environment:
       - NODE_ENV=development
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_USER=myuser
+      - POSTGRES_PASSWORD=mypassword
+      - POSTGRES_DB=mydb
     volumes:
       - .:/app
     depends_on:
       - n8n
+      - postgres
   n8n:
     image: n8nio/n8n:1.102.0
     container_name: n8n
@@ -31,6 +37,17 @@ services:
       - N8N_API_KEY=devkey123
     volumes:
       - ../n8n-data:/home/node/.n8n
+  postgres:
+    image: postgres:15
+    container_name: postgres
+    environment:
+      - POSTGRES_USER=myuser
+      - POSTGRES_PASSWORD=mypassword
+      - POSTGRES_DB=mydb
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./pgdata:/var/lib/postgresql/data
 volumes:
   n8n-data:
     external: true
