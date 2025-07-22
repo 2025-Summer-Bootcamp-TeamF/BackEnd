@@ -7,3 +7,4 @@ n8n-workflows/
 
 .DS_Store
 pgdata/
+*.sql

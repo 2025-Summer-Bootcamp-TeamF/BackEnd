@@ -1,6 +1,16 @@
 const passport = require('passport');
 const GoogleStrategy = require('passport-google-oauth20').Strategy;
 const { generateToken } = require('../utils/jwtUtils');
+const { findOrCreateUser } = require('../utils/userService');
+const axios = require('axios');
+const { Pool } = require('pg');
+const pool = new Pool({
+  user: process.env.POSTGRES_USER,
+  host: process.env.POSTGRES_HOST,
+  database: process.env.POSTGRES_DB,
+  password: process.env.POSTGRES_PASSWORD,
+  port: process.env.POSTGRES_PORT,
+});
 
 // Google OAuth 전략 설정
 passport.use(new GoogleStrategy({
@@ -10,21 +20,57 @@ passport.use(new GoogleStrategy({
   },
   async (accessToken, refreshToken, profile, done) => {
     try {
-      // Google에서 받은 사용자 정보
-      const user = {
-        id: profile.id,
-        email: profile.emails[0].value,
-        name: profile.displayName,
-        picture: profile.photos[0].value,
-        provider: 'google'
-      };
+      // 1. 유저 생성/조회
+      const youtube_user_id = profile.id;
+      const email = profile.emails[0].value;
+      const user = await findOrCreateUser({ youtube_user_id, email });
 
-      // JWT 토큰 생성
-      const token = generateToken(user);
-      
-      // 토큰과 함께 사용자 정보 반환
+      // 2. 유튜브 채널 정보 가져오기
+      const ytRes = await axios.get(
+        'https://www.googleapis.com/youtube/v3/channels',
+        {
+          params: {
+            part: 'snippet',
+            mine: true
+          },
+          headers: {
+            Authorization: `Bearer ${accessToken}`
+          }
+        }
+      );
+      const channels = ytRes.data.items;
+
+      // 3. 채널 정보 DB에 저장 (중복 체크)
+      for (const ch of channels) {
+        const youtube_channel_id = ch.id; // YouTube 채널 고유 id
+        const channel_name = ch.snippet.title;
+        const profile_image_url = ch.snippet.thumbnails.default.url;
+        const channel_intro = ch.snippet.description;
+
+        // 중복 체크 (user_id + youtube_channel_id 기준)
+        const exists = await pool.query(
+          'SELECT 1 FROM "Channel" WHERE user_id = $1 AND youtube_channel_id = $2',
+          [user.id, youtube_channel_id]
+        );
+        if (exists.rows.length === 0) {
+          await pool.query(
+            `INSERT INTO "Channel" (user_id, youtube_channel_id, channel_name, profile_image_url, channel_intro, is_deleted, created_at, updated_at)
+             VALUES ($1, $2, $3, $4, $5, false, NOW(), NOW())`,
+            [user.id, youtube_channel_id, channel_name, profile_image_url, channel_intro]
+          );
+        }
+      }
+
+      // 4. JWT 발급
+      const token = generateToken({
+        id: user.id,
+        youtube_user_id: user.youtube_user_id,
+        email: user.email
+      });
+
       return done(null, { user, token });
     } catch (error) {
+      console.error('YouTube API error:', error.response?.data || error.message);
       return done(error, null);
     }
   }
