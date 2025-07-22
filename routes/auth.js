@@ -1,19 +1,17 @@
-const express = require('express');
-const passport = require('passport');
-const { verifyToken, generateToken } = require('../utils/jwtUtils');
-const { authenticateToken } = require('../middleware/auth');
-
-const router = express.Router();
-
 /*
   [Auth 관련 엔드포인트]
   GET    /auth/google            - 구글 로그인 시작
   GET    /auth/google/callback   - 구글 콜백 처리
   GET    /auth/failure           - 인증 실패 처리
-  POST   /auth/verify            - JWT 토큰 검증
-  POST   /auth/refresh           - JWT 토큰 갱신
   POST   /auth/logout            - 로그아웃
 */
+
+const express = require('express');
+const passport = require('passport');
+const { verifyToken, generateToken } = require('../utils/jwtUtils');
+const { authenticateToken } = require('../middleware/auth');
+const router = express.Router();
+
 
 // Google OAuth 로그인 시작
 router.get('/google', passport.authenticate('google', {
@@ -44,10 +42,6 @@ router.get('/google/callback',
 router.get('/failure', (req, res) => {
   res.redirect(`${process.env.FRONTEND_URL}/auth/error`);
 });
-
-// JWT 토큰 검증
-
-// 토큰 갱신
 
 // 로그아웃 (클라이언트에서 토큰 삭제)
 router.post('/logout', (req, res) => {

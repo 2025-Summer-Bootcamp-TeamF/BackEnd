@@ -6,3 +6,4 @@ node_modules/
 n8n-workflows/
 
 .DS_Store
+pgdata/
