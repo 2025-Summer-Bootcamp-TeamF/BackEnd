@@ -15,7 +15,11 @@ const router = express.Router();
 
 // Google OAuth 로그인 시작
 router.get('/google', passport.authenticate('google', {
-  scope: ['profile', 'email']
+  scope: [
+    'profile',
+    'email',
+    'https://www.googleapis.com/auth/youtube.readonly' 
+  ]
 }));
 
 // Google OAuth 콜백 처리
