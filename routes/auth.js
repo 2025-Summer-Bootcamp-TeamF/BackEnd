@@ -18,8 +18,10 @@ router.get('/google', passport.authenticate('google', {
   scope: [
     'profile',
     'email',
-    'https://www.googleapis.com/auth/youtube.readonly' 
-  ]
+    'https://www.googleapis.com/auth/youtube',
+    'https://www.googleapis.com/auth/youtube.force-ssl' 
+  ],
+  prompt: 'consent' 
 }));
 
 // Google OAuth 콜백 처리
