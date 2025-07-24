@@ -1,3 +1,10 @@
+/**
+ * @swagger
+ * tags:
+ *   name: Channel
+ *   description: 채널 관련 API
+ */
+
 const express = require('express');
 const { authenticateToken } = require('../middleware/auth');
 const { google } = require('googleapis');
@@ -6,6 +13,41 @@ const prisma = new PrismaClient();
 
 const router = express.Router();
 
+/**
+ * @swagger
+ * /channel/avg-views:
+ *   get:
+ *     summary: 채널 평균 조회수 반환
+ *     tags: [Channel]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: 평균 조회수 반환
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 average_view:
+ *                   type: number
+ *                   example: 15403
+ *       401:
+ *         description: 인증 실패 (토큰 없음)
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 message:
+ *                   type: string
+ *       404:
+ *         description: 유저 또는 채널, 스냅샷 없음
+ *       500:
+ *         description: DB 오류
+ */
 // 평균 조회수 반환
 router.get('/avg-views', authenticateToken, async (req, res) => {
   try {
@@ -35,6 +77,42 @@ router.get('/avg-views', authenticateToken, async (req, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /channel/subscriber-change:
+ *   get:
+ *     summary: 최근 5일 구독자 변화 추이 반환
+ *     tags: [Channel]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: 구독자 변화 추이 반환
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       date:
+ *                         type: string
+ *                         example: "2025-07-21"
+ *                       subscriber:
+ *                         type: integer
+ *                         example: 34912
+ *       401:
+ *         description: 인증 실패 (토큰 없음)
+ *       404:
+ *         description: 유저 또는 채널 없음
+ *       500:
+ *         description: DB 오류
+ */
 // 구독자 변화 추이 반환 (최근 5일)
 router.get('/subscriber-change', authenticateToken, async (req, res) => {
   try {
@@ -63,6 +141,58 @@ router.get('/subscriber-change', authenticateToken, async (req, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /channel/videos:
+ *   get:
+ *     summary: 채널의 최근 5개 영상 목록 조회
+ *     tags: [Channel]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: 영상 목록 반환
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 data:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       videoId:
+ *                         type: string
+ *                         example: "abc123"
+ *                       title:
+ *                         type: string
+ *                         example: "유튜브 영상 제목"
+ *                       thumbnail:
+ *                         type: string
+ *                         example: "https://example.com/thumbnail.jpg"
+ *                       publishedAt:
+ *                         type: string
+ *                         example: "2025-07-22"
+ *                       viewCount:
+ *                         type: integer
+ *                         example: 15203
+ *                       commentRate:
+ *                         type: string
+ *                         example: "2.334%"
+ *                       likeRate:
+ *                         type: string
+ *                         example: "4.7%"
+ *       401:
+ *         description: 인증 실패 (토큰 없음)
+ *       404:
+ *         description: 유저 또는 채널 없음
+ *       500:
+ *         description: DB 오류
+ */
 // 영상 목록 조회 (DB 기반, 최근 5개)
 router.get('/videos', authenticateToken, async (req, res) => {
   try {
