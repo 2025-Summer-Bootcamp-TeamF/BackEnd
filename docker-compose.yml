@@ -7,6 +7,8 @@ services:
     container_name: backend
     ports:
       - "8000:8000"
+    env_file:
+      - .env
     environment:
       - NODE_ENV=development
       - POSTGRES_HOST=postgres
@@ -20,7 +22,9 @@ services:
       - n8n
       - postgres
     networks:
-      - app-network
+      - app-network    
+    command: sh -c "npx prisma generate && npm run dev"
+
   n8n:
     image: n8nio/n8n:1.102.0
     container_name: n8n
@@ -45,13 +49,15 @@ services:
     image: postgres:15
     container_name: postgres
     environment:
-      - POSTGRES_USER=myuser
-      - POSTGRES_PASSWORD=mypassword
-      - POSTGRES_DB=mydb
+      - POSTGRES_USER=teamF
+      - POSTGRES_PASSWORD=2025
+      - POSTGRES_DB=teamFdb
+      - TZ=Asia/Seoul
     ports:
       - "5432:5432"
     volumes:
       - ./pgdata:/var/lib/postgresql/data
+      - ./initdb:/docker-entrypoint-initdb.d
     networks:
       - app-network
 

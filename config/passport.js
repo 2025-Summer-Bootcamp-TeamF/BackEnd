@@ -20,6 +20,8 @@ passport.use(new GoogleStrategy({
   },
   async (accessToken, refreshToken, profile, done) => {
     try {
+      // [임시] Google access_token 콘솔에 출력 (보안상 실제 서비스에서는 제거해야 함)
+      console.log('Google access_token:', accessToken);
       // 1. 유저 생성/조회
       const youtube_user_id = profile.id;
       const email = profile.emails[0].value;
