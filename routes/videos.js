@@ -8,6 +8,13 @@
   PUT    /api/videos/:video_id/comments            - 여러 댓글 comment_type 수정 (0,1→2 / 2→1)
 */
 
+/**
+ * @swagger
+ * tags:
+ *   name: Videos
+ *   description: 영상 및 댓글 관련 API
+ */
+
 const express = require('express');
 const axios = require('axios');
 const pool = require('../db');
@@ -28,6 +35,34 @@ async function calculatePositiveRatio(video_id, pool) {
   return Math.round((positive / comments.length) * 1000) / 10;
 }
 
+/**
+ * @swagger
+ * /api/videos/{video_id}/comments/analysis:
+ *   post:
+ *     summary: 유튜브 댓글 분석 요청 (n8n 연동)
+ *     tags: [Videos]
+ *     parameters:
+ *       - in: path
+ *         name: video_id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: 분석할 영상 ID
+ *     responses:
+ *       200:
+ *         description: 분석 결과 저장 및 반환
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   type: object
+ *       500:
+ *         description: 댓글 분석 저장 실패
+ */
 // 댓글 분석 API
 router.post('/videos/:video_id/comments/analysis', async (req, res) => {
   const { video_id } = req.params;
@@ -60,6 +95,24 @@ router.post('/videos/:video_id/comments/analysis', async (req, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /api/videos/{video_id}/comments/positive:
+ *   get:
+ *     summary: 긍정 댓글 조회
+ *     tags: [Videos]
+ *     parameters:
+ *       - in: path
+ *         name: video_id
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: 긍정 댓글 목록 반환
+ *       500:
+ *         description: 조회 실패
+ */
 // 긍정적 댓글만 조회하는 API
 router.get('/videos/:video_id/comments/positive', async (req, res) => {
   const { video_id } = req.params;
@@ -76,6 +129,24 @@ router.get('/videos/:video_id/comments/positive', async (req, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /api/videos/{video_id}/comments/negative:
+ *   get:
+ *     summary: 부정 댓글 조회
+ *     tags: [Videos]
+ *     parameters:
+ *       - in: path
+ *         name: video_id
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: 부정 댓글 목록 반환
+ *       500:
+ *         description: 조회 실패
+ */
 // 부정적 댓글만 조회하는 API
 router.get('/videos/:video_id/comments/negative', async (req, res) => {
   const { video_id } = req.params;
@@ -91,6 +162,32 @@ router.get('/videos/:video_id/comments/negative', async (req, res) => {
     res.status(500).json({ error: '부정 댓글 조회 실패' });
   }
 });
+
+/**
+ * @swagger
+ * /api/videos/watches:
+ *   get:
+ *     summary: 최근 5개 영상의 최신 스냅샷 조회
+ *     tags: [Videos]
+ *     parameters:
+ *       - in: query
+ *         name: channel_id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: 채널 ID
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: 스냅샷 목록 반환
+ *       400:
+ *         description: 필수 파라미터 누락
+ *       404:
+ *         description: 채널 없음
+ *       500:
+ *         description: 서버 오류
+ */
 
 // 로그인한 사용자의 채널의 최근 5개 영상의 최신 스냅샷 정보 조회 API
 router.get('/videos/watches', authenticateToken, async (req, res) => {
@@ -146,6 +243,32 @@ router.get('/videos/watches', authenticateToken, async (req, res) => {
     res.status(500).json({ error: '영상별 조회수/스냅샷 조회 실패' });
   }
 });
+
+/**
+ * @swagger
+ * /api/videos/likes:
+ *   get:
+ *     summary: 최근 5개 영상의 좋아요 참여율 조회
+ *     tags: [Videos]
+ *     parameters:
+ *       - in: query
+ *         name: channel_id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: 채널 ID
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: 좋아요 통계 반환
+ *       400:
+ *         description: 필수 파라미터 누락
+ *       404:
+ *         description: 채널 없음
+ *       500:
+ *         description: 서버 오류
+ */
 
 // 영상별 좋아요 참여율 가져오기 API
 router.get('/videos/likes', authenticateToken, async (req, res) => {
@@ -208,6 +331,32 @@ router.get('/videos/likes', authenticateToken, async (req, res) => {
     res.status(500).json({ error: '영상별 좋아요 참여율 조회 실패' });
   }
 });
+
+/**
+ * @swagger
+ * /api/videos/comments:
+ *   get:
+ *     summary: 최근 5개 영상의 댓글 참여율 조회
+ *     tags: [Videos]
+ *     parameters:
+ *       - in: query
+ *         name: channel_id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: 채널 ID
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: 댓글 참여율 반환
+ *       400:
+ *         description: 필수 파라미터 누락
+ *       404:
+ *         description: 채널 없음
+ *       500:
+ *         description: 서버 오류
+ */
 // 영상별 댓글 참여율 가져오기 API
 router.get('/videos/comments', authenticateToken, async (req, res) => {
   const { channel_id } = req.query;
@@ -268,6 +417,36 @@ router.get('/videos/comments', authenticateToken, async (req, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /api/videos/{video_id}/comments/summary:
+ *   get:
+ *     summary: 감정 요약 이력 전체 조회
+ *     tags: [Videos]
+ *     parameters:
+ *       - in: path
+ *         name: video_id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: 영상 ID
+ *     responses:
+ *       200:
+ *         description: 감정 요약 이력 반환
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *       500:
+ *         description: 감정 요약 이력 조회 실패
+ */
 // 감정 요약 이력 전체 조회 API
 router.get('/videos/:video_id/comments/summary', async (req, res) => {
   const { video_id } = req.params;
@@ -283,6 +462,36 @@ router.get('/videos/:video_id/comments/summary', async (req, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /api/videos/{video_id}/comments/classify:
+ *   post:
+ *     summary: 유튜브 댓글 분류 및 저장 (n8n 연동)
+ *     tags: [Videos]
+ *     parameters:
+ *       - in: path
+ *         name: video_id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: 영상 ID
+ *     responses:
+ *       200:
+ *         description: 댓글 분류 및 저장 결과 반환
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *       500:
+ *         description: 댓글 분류 저장 실패
+ */
 // 댓글 분류 및 저장 API
 router.post('/videos/:video_id/comments/classify', async (req, res) => {
   const { video_id } = req.params;
@@ -398,6 +607,34 @@ router.post('/videos/:video_id/comments/classify', async (req, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /api/videos/{video_id}/comments/ratio:
+ *   get:
+ *     summary: 긍/부정 비율 그래프 데이터 조회
+ *     tags: [Videos]
+ *     parameters:
+ *       - in: path
+ *         name: video_id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: 영상 ID
+ *     responses:
+ *       200:
+ *         description: 긍/부정 비율 반환
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 positive_ratio:
+ *                   type: number
+ *       500:
+ *         description: 긍/부정 비율 계산 실패
+ */
 // 긍/부정 비율 그래프 데이터 API
 router.get('/videos/:video_id/comments/ratio', async (req, res) => {
   const { video_id } = req.params;
@@ -409,6 +646,53 @@ router.get('/videos/:video_id/comments/ratio', async (req, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /api/videos/{video_id}/comments:
+ *   delete:
+ *     summary: 여러 댓글 삭제 (YouTube 숨김 + DB 삭제)
+ *     tags: [Videos]
+ *     parameters:
+ *       - in: path
+ *         name: video_id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: 영상 ID
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               comment_ids:
+ *                 type: array
+ *                 items:
+ *                   type: string
+ *               youtube_access_token:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: 삭제 결과 반환
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 youtubeDeleted:
+ *                   type: integer
+ *                 dbDeleted:
+ *                   type: integer
+ *                 errors:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *       400:
+ *         description: 잘못된 요청
+ */
 // 여러 댓글 삭제 (DB + YouTube)
 router.delete('/videos/:video_id/comments', async (req, res) => {
   const { video_id } = req.params;
@@ -467,6 +751,49 @@ router.delete('/videos/:video_id/comments', async (req, res) => {
   });
 });
 
+/**
+ * @swagger
+ * /api/videos/{video_id}/comments:
+ *   put:
+ *     summary: 여러 댓글 comment_type 수정 (0,1→2 / 2→1)
+ *     tags: [Videos]
+ *     parameters:
+ *       - in: path
+ *         name: video_id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: 영상 ID
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               comment_ids:
+ *                 type: array
+ *                 items:
+ *                   type: string
+ *     responses:
+ *       200:
+ *         description: 수정 결과 반환
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 updated:
+ *                   type: integer
+ *                 errors:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *       400:
+ *         description: 잘못된 요청
+ */
 // 여러 댓글 comment_type 수정
 router.put('/videos/:video_id/comments', async (req, res) => {
   const { video_id } = req.params;
