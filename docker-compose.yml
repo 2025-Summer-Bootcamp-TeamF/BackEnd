@@ -16,6 +16,7 @@ services:
       - POSTGRES_USER=teamF
       - POSTGRES_PASSWORD=2025
       - POSTGRES_DB=teamFdb
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
     volumes:
       - .:/app
     depends_on:
@@ -47,6 +48,7 @@ services:
       - POSTGRES_USER=teamF
       - POSTGRES_PASSWORD=2025
       - POSTGRES_DB=teamFdb
+      - TZ=Asia/Seoul
     ports:
       - "5432:5432"
     volumes:
