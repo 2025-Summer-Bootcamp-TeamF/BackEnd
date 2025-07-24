@@ -1,4 +1,6 @@
-// backend/server.js
+const swaggerUi = require('swagger-ui-express');
+const swaggerSpecs = require('./swagger');
+
 const express = require('express');
 const cors = require('cors');
 const session = require('express-session');
@@ -7,6 +9,8 @@ require('dotenv').config();
 const client = require('prom-client');
 const collectDefaultMetrics = client.collectDefaultMetrics;
 collectDefaultMetrics();
+
+
 // Passport 설정
 const passport = require('./config/passport');
 
@@ -44,6 +48,8 @@ app.use('/auth', authRoutes);
 
 const videoRoutes = require('./routes/videos');
 app.use('/api', videoRoutes);
+
+app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpecs));
 
 // 기본 라우터
 app.get('/', (req, res) => {
