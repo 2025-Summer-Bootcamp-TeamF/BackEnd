@@ -4,6 +4,8 @@
   GET    /api/videos/:video_id/comments/summary    - 감정 요약 이력 전체 조회
   POST   /api/videos/:video_id/comments/classify   - 유튜브 댓글 분류 및 저장 (n8n 연동)
   GET    /api/videos/:video_id/comments/ratio      - 긍/부정 비율 그래프 데이터 조회
+  DELETE /api/videos/:video_id/comments            - 여러 댓글 삭제 (YouTube 숨김 + DB 삭제)
+  PUT    /api/videos/:video_id/comments            - 여러 댓글 comment_type 수정 (0,1→2 / 2→1)
 */
 
 const express = require('express');
@@ -88,7 +90,7 @@ router.post('/videos/:video_id/comments/classify', async (req, res) => {
     const comment_classified_at = videoResult.rows[0]?.comment_classified_at;
 
     // 2. n8n에 전달
-    const n8nRes = await axios.post('http://n8n:5678/webhook-test/comments-classify', {
+    const n8nRes = await axios.post('http://n8n:5678/webhook/comments-classify', {
       video_id,
       comment_classified_at
     });
@@ -196,6 +198,115 @@ router.get('/videos/:video_id/comments/ratio', async (req, res) => {
   } catch (error) {
     res.status(500).json({ error: '긍/부정 비율 계산 실패' });
   }
+});
+
+// 여러 댓글 삭제 (DB + YouTube)
+router.delete('/videos/:video_id/comments', async (req, res) => {
+  const { video_id } = req.params;
+  const { comment_ids, youtube_access_token } = req.body;
+
+  if (!Array.isArray(comment_ids) || comment_ids.length === 0) {
+    return res.status(400).json({ error: '삭제할 댓글 ID가 필요합니다.' });
+  }
+  if (!youtube_access_token) {
+    return res.status(400).json({ error: 'YouTube access token이 필요합니다.' });
+  }
+
+  let dbDeleted = 0;
+  let youtubeDeleted = 0;
+  let errors = [];
+
+  for (const commentId of comment_ids) {
+    // 1. YouTube API로 숨김(거부) 처리
+    try {
+      await axios.post(
+        `https://www.googleapis.com/youtube/v3/comments/setModerationStatus`,
+        null, // POST body 없음
+        {
+          params: {
+            id: commentId,
+            moderationStatus: 'rejected',
+          },
+          headers: {
+            Authorization: `Bearer ${youtube_access_token}`,
+          },
+        }
+      );
+      youtubeDeleted++;
+    } catch (err) {
+      errors.push({ commentId, error: 'YouTube 숨김(거부) 실패', detail: err.response?.data || err.message });
+      continue; // 유튜브 숨김 실패 시 DB도 삭제하지 않음
+    }
+
+    // 2. DB에서 hard delete
+    try {
+      await pool.query(
+        `DELETE FROM "Comment" WHERE video_id = $1 AND youtube_comment_id = $2`,
+        [video_id, commentId]
+      );
+      dbDeleted++;
+    } catch (err) {
+      errors.push({ commentId, error: 'DB 삭제 실패', detail: err.message });
+    }
+  }
+
+  res.status(200).json({
+    success: true,
+    youtubeDeleted,
+    dbDeleted,
+    errors,
+  });
+});
+
+// 여러 댓글 comment_type 수정
+router.put('/videos/:video_id/comments', async (req, res) => {
+  const { video_id } = req.params;
+  const { comment_ids } = req.body;
+
+  if (!Array.isArray(comment_ids) || comment_ids.length === 0) {
+    return res.status(400).json({ error: '수정할 댓글 ID가 필요합니다.' });
+  }
+
+  let updated = 0;
+  let errors = [];
+
+  for (const commentId of comment_ids) {
+    try {
+      // 1. 댓글 유효성 검사 (해당 영상에 존재하는지)
+      const check = await pool.query(
+        'SELECT comment_type FROM "Comment" WHERE video_id = $1 AND youtube_comment_id = $2',
+        [video_id, commentId]
+      );
+      if (check.rows.length === 0) {
+        errors.push({ commentId, error: '댓글이 존재하지 않음' });
+        continue;
+      }
+      const currentType = check.rows[0].comment_type;
+      let newType;
+      if (currentType === 0 || currentType === 1) {
+        newType = 2;
+      } else if (currentType === 2) {
+        newType = 1;
+      } else {
+        errors.push({ commentId, error: '알 수 없는 comment_type' });
+        continue;
+      }
+      // 2. comment_type 업데이트
+      await pool.query(
+        'UPDATE "Comment" SET comment_type = $1 WHERE video_id = $2 AND youtube_comment_id = $3',
+        [newType, video_id, commentId]
+      );
+      updated++;
+    } catch (err) {
+      errors.push({ commentId, error: 'DB 수정 실패', detail: err.message });
+    }
+  }
+
+  res.status(200).json({
+    success: true,
+    updated,
+    errors,
+  });
 });
 
 module.exports = router; 
