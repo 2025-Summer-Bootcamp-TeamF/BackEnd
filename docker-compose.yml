@@ -6,19 +6,21 @@ services:
       dockerfile: Dockerfile
     container_name: backend
     ports:
-      - "3000:3000"
+      - "8000:8000"
     environment:
       - NODE_ENV=development
       - POSTGRES_HOST=postgres
       - POSTGRES_PORT=5432
-      - POSTGRES_USER=teamF
-      - POSTGRES_PASSWORD=2025
-      - POSTGRES_DB=teamFdb
+      - POSTGRES_USER=myuser
+      - POSTGRES_PASSWORD=mypassword
+      - POSTGRES_DB=mydb
     volumes:
       - .:/app
     depends_on:
       - n8n
       - postgres
+    networks:
+      - app-network
   n8n:
     image: n8nio/n8n:1.102.0
     container_name: n8n
@@ -37,17 +39,75 @@ services:
       - N8N_API_KEY=devkey123
     volumes:
       - ../n8n-data:/home/node/.n8n
+    networks:
+      - app-network
   postgres:
     image: postgres:15
     container_name: postgres
     environment:
-      - POSTGRES_USER=teamF
-      - POSTGRES_PASSWORD=2025
-      - POSTGRES_DB=teamFdb
+      - POSTGRES_USER=myuser
+      - POSTGRES_PASSWORD=mypassword
+      - POSTGRES_DB=mydb
     ports:
       - "5432:5432"
     volumes:
       - ./pgdata:/var/lib/postgresql/data
+    networks:
+      - app-network
+
+  node-exporter:
+    image: prom/node-exporter
+    container_name: node-exporter
+    ports:
+      - "9100:9100"
+    networks:
+      - monitoring
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/host:ro
+    command:
+      - '--path.procfs=/host/proc'
+      - '--path.sysfs=/host/sys'
+      - '--path.rootfs=/host'
+
+  prometheus:
+    image: prom/prometheus
+    container_name: prometheus
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+    ports:
+      - "9090:9090"
+    networks:
+      - monitoring
+
+  grafana:
+    image: grafana/grafana
+    container_name: grafana
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning
+    networks:
+      - monitoring
+
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:latest
+    container_name: cadvisor
+    ports:
+      - "8080:8080"
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+    networks:
+      - monitoring
+
 volumes:
   n8n-data:
     external: true
+
+networks:
+  app-network:
+  monitoring:

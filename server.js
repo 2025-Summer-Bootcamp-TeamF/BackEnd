@@ -4,6 +4,9 @@ const cors = require('cors');
 const session = require('express-session');
 require('dotenv').config();
 
+const client = require('prom-client');
+const collectDefaultMetrics = client.collectDefaultMetrics;
+collectDefaultMetrics();
 // Passport 설정
 const passport = require('./config/passport');
 
@@ -45,6 +48,11 @@ app.use('/api', videoRoutes);
 // 기본 라우터
 app.get('/', (req, res) => {
   res.send('Backend server is running!');
+});
+
+app.get('/metrics', (req, res) => {
+  res.set('Content-Type', client.register.contentType);
+  res.end(client.register.metrics());
 });
 
 // 서버 실행
