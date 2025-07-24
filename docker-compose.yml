@@ -49,9 +49,9 @@ services:
     image: postgres:15
     container_name: postgres
     environment:
-      - POSTGRES_USER=teamF
-      - POSTGRES_PASSWORD=2025
-      - POSTGRES_DB=teamFdb
+      - POSTGRES_USER=myuser
+      - POSTGRES_PASSWORD=mypassword
+      - POSTGRES_DB=mydb
       - TZ=Asia/Seoul
     ports:
       - "5432:5432"

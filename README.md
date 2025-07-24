@@ -27,7 +27,7 @@
 5. **직접 SQL문으로 DB 다루기 (선택)**
    ```sh
    docker exec -it postgres sh
-   psql -U teamF -d teamFdb
+   psql -U myuser -d mydb 
    ```
 
    그 다음 sql문 실행
