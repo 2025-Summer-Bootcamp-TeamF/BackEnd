@@ -13,6 +13,8 @@ RUN npm install
 # 전체 소스 복사
 COPY . .
 
+RUN npx prisma generate
+
 # 컨테이너에서 열 포트
 EXPOSE 3000
 
