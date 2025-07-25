@@ -52,6 +52,9 @@ app.use('/api', videoRoutes);
 const channelRoutes = require('./routes/channel');
 app.use('/api/channel', channelRoutes);
 
+const othersRoutes = require('./routes/others');
+app.use('/api/others', othersRoutes);
+
 app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpecs));
 
 // 기본 라우터

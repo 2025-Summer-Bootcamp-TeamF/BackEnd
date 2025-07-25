@@ -278,7 +278,7 @@ router.get('/videos', authenticateToken, async (req, res) => {
  *       500:
  *         description: 유튜브 영상 정보 수집 중 오류
  */
-// 채널의 모든 영상 정보 저장(스냅샷까지)하는 엔드포인트 (모든 영상 싹 다 가져오기, GET+쿼리파라미터)
+// 채널의 모든 영상 정보 저장(스냅샷까지)하는 엔드포인트 (playlistItems API 사용, GET+쿼리파라미터)
 router.get('/videos/fetch', async (req, res) => {
   const channelId = req.query.channelId;
   if (!channelId) {
@@ -291,25 +291,34 @@ router.get('/videos/fetch', async (req, res) => {
   }
 
   try {
+    // 1. uploads playlistId 얻기
+    const channelInfoUrl = `https://www.googleapis.com/youtube/v3/channels?part=contentDetails&id=${channelId}&key=${YOUTUBE_API_KEY}`;
+    const channelInfoResp = await fetch(channelInfoUrl);
+    const channelInfoData = await channelInfoResp.json();
+    const uploadsPlaylistId = channelInfoData.items?.[0]?.contentDetails?.relatedPlaylists?.uploads;
+    if (!uploadsPlaylistId) {
+      return res.status(404).json({ success: false, message: '업로드 재생목록(playlistId)을 찾을 수 없습니다.' });
+    }
+
+    // 2. playlistItems API로 모든 영상 가져오기
     let nextPageToken = '';
     let totalResults = [];
+    const dbChannel = await prisma.channel.findFirst({ where: { youtube_channel_id: channelId } });
+    if (!dbChannel) {
+      return res.status(404).json({ success: false, message: 'DB에 해당 유튜브 채널이 없습니다.' });
+    }
     do {
-      const videoListUrl = `https://www.googleapis.com/youtube/v3/search?key=${YOUTUBE_API_KEY}&channelId=${channelId}&part=snippet,id&order=date&maxResults=50&type=video${nextPageToken ? `&pageToken=${nextPageToken}` : ''}`;
-      const videoListResp = await fetch(videoListUrl);
-      const videoListData = await videoListResp.json();
-      if (!videoListData.items) {
+      const playlistUrl = `https://www.googleapis.com/youtube/v3/playlistItems?part=snippet&playlistId=${uploadsPlaylistId}&maxResults=50&key=${YOUTUBE_API_KEY}${nextPageToken ? `&pageToken=${nextPageToken}` : ''}`;
+      const playlistResp = await fetch(playlistUrl);
+      const playlistData = await playlistResp.json();
+      if (!playlistData.items) {
         break;
       }
-      for (const item of videoListData.items) {
-        const videoId = item.id.videoId;
+      for (const item of playlistData.items) {
         const snippet = item.snippet;
+        const videoId = snippet.resourceId?.videoId;
+        if (!videoId) continue;
         // 비디오 테이블에 upsert (정적 정보)
-        const dbChannel = await prisma.channel.findFirst({ where: { youtube_channel_id: channelId } });
-        if (!dbChannel) {
-          // 채널이 DB에 없으면 에러 처리
-          return res.status(404).json({ success: false, message: 'DB에 해당 유튜브 채널이 없습니다.' });
-        }
-
         const video = await prisma.video.upsert({
           where: { id: videoId },
           update: {
@@ -320,7 +329,7 @@ router.get('/videos/fetch', async (req, res) => {
           },
           create: {
             id: videoId,
-            channel_id: dbChannel.id, // ← 반드시 실제 PK로!
+            channel_id: dbChannel.id,
             video_name: snippet.title,
             video_thumbnail_url: snippet.thumbnails?.high?.url || null,
             upload_date: snippet.publishedAt ? new Date(snippet.publishedAt) : null,
@@ -330,7 +339,6 @@ router.get('/videos/fetch', async (req, res) => {
         });
         // DB의 채널 pk와 유튜브 채널 ID 매핑 (최초 1회만 필요)
         if (!video.channel_id) {
-          const dbChannel = await prisma.channel.findFirst({ where: { youtube_channel_id: channelId } });
           if (dbChannel) {
             await prisma.video.update({ where: { id: videoId }, data: { channel_id: dbChannel.id } });
           }
@@ -341,11 +349,10 @@ router.get('/videos/fetch', async (req, res) => {
           thumbnail: snippet.thumbnails?.high?.url || null,
           publishedAt: snippet.publishedAt,
         });
-
         // 비디오 스냅샷 저장
         await saveVideoSnapshot(videoId, YOUTUBE_API_KEY);
       }
-      nextPageToken = videoListData.nextPageToken;
+      nextPageToken = playlistData.nextPageToken;
     } while (nextPageToken);
 
     res.json({ success: true, count: totalResults.length, data: totalResults });
