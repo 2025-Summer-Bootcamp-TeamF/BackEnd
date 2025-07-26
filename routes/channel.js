@@ -426,7 +426,7 @@ router.get('/subscriber-change', authenticateToken, async (req, res) => {
  *       500:
  *         description: DB 오류
  */
-// 영상 목록 조회 (DB 기반, 최근 5개)
+// 영상 목록 조회 (DB 기반, 최신순 정렬)
 router.get('/videos', authenticateToken, async (req, res) => {
   try {
     const userId = req.user.id;
@@ -439,8 +439,7 @@ router.get('/videos', authenticateToken, async (req, res) => {
     }
     const videos = await prisma.video.findMany({
       where: { channel_id: channel.id },
-      orderBy: { created_at: 'desc' },
-      take: 5
+      orderBy: { upload_date: 'desc' }
     });
     const result = [];
     for (const video of videos) {
@@ -845,6 +844,7 @@ router.post('/snapshot', async (req, res) => {
     res.status(500).json({ success: false, message: '채널 스냅샷 저장 중 오류', error: error.message });
   }
 });
+
 
 /**
  * @swagger

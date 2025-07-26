@@ -5,6 +5,7 @@
 2. **의존성 설치**
    ```sh
    npm install
+   npm install openai
    ```
 
 3. **도커 컴포즈로 서비스 실행**
