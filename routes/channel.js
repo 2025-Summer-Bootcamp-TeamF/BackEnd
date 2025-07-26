@@ -22,6 +22,131 @@ router.use((req, res, next) => {
 
 /**
  * @swagger
+ * /channel/my:
+ *   get:
+ *     summary: 현재 로그인한 사용자의 채널 정보 조회
+ *     tags: [Channel]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: 채널 정보 반환
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 channel:
+ *                   type: object
+ *                   properties:
+ *                     id:
+ *                       type: number
+ *                     channel_name:
+ *                       type: string
+ *                     profile_image_url:
+ *                       type: string
+ *                     channel_intro:
+ *                       type: string
+ *                     youtube_channel_id:
+ *                       type: string
+ *                     created_at:
+ *                       type: string
+ *                 snapshot:
+ *                   type: object
+ *                   properties:
+ *                     subscriber:
+ *                       type: number
+ *                     total_videos:
+ *                       type: number
+ *                     total_view:
+ *                       type: number
+ *                     channel_created:
+ *                       type: string
+ *                     nation:
+ *                       type: string
+ *       401:
+ *         description: 인증 실패 (토큰 없음)
+ *       404:
+ *         description: 채널 정보 없음
+ *       500:
+ *         description: 서버 오류
+ */
+// 현재 로그인한 사용자의 채널 정보 조회
+router.get('/my', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    if (!userId) {
+      return res.status(401).json({ success: false, message: 'No user id in token' });
+    }
+
+    console.log('Fetching channel data for user ID:', userId);
+
+    const { Pool } = require('pg');
+    const pool = new Pool({
+      user: process.env.POSTGRES_USER,
+      host: process.env.POSTGRES_HOST,
+      database: process.env.POSTGRES_DB,
+      password: process.env.POSTGRES_PASSWORD,
+      port: process.env.POSTGRES_PORT,
+    });
+
+    // 현재 로그인한 사용자의 채널 정보 조회
+    const channelResult = await pool.query(
+      'SELECT * FROM "Channel" WHERE user_id = $1 AND is_deleted = false',
+      [userId]
+    );
+
+    if (channelResult.rows.length === 0) {
+      console.log('No channel found for user ID:', userId);
+      return res.status(404).json({ 
+        success: false, 
+        message: 'Channel not found for the current user' 
+      });
+    }
+
+    const channel = channelResult.rows[0];
+    console.log('Channel found:', channel);
+
+    // 최신 스냅샷 정보 조회
+    const snapshotResult = await pool.query(
+      'SELECT * FROM "Channel_snapshot" WHERE channel_id = $1 AND is_deleted = false ORDER BY created_at DESC LIMIT 1',
+      [channel.id]
+    );
+
+    const snapshot = snapshotResult.rows[0] || {};
+    console.log('Snapshot found:', snapshot);
+
+    res.json({
+      channel: {
+        id: channel.id,
+        channel_name: channel.channel_name,
+        profile_image_url: channel.profile_image_url,
+        channel_intro: channel.channel_intro,
+        youtube_channel_id: channel.youtube_channel_id,
+        created_at: channel.created_at
+      },
+      snapshot: {
+        subscriber: snapshot.subscriber,
+        total_videos: snapshot.total_videos,
+        total_view: snapshot.total_view,
+        channel_created: snapshot.channel_created,
+        nation: snapshot.nation
+      }
+    });
+
+  } catch (error) {
+    console.error('Error fetching channel data:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Internal server error',
+      error: error.message 
+    });
+  }
+});
+
+
+/**
+ * @swagger
  * /channel/avg-views:
  *   get:
  *     summary: 채널 평균 조회수 반환
@@ -407,39 +532,71 @@ router.get('/categories/stats', authenticateToken, async (req, res) => {
       return res.status(404).json({ success: false, message: 'Channel not found' });
     }
     
-    // 카테고리별 통계 조회 (JOIN을 사용하여 한 번에 조회)
-    const categoryStats = await prisma.$queryRaw`
-      SELECT 
-        c.id as category_id,
-        c.category as category_name,
-        COUNT(vc.video_id)::int as video_count,
-        COALESCE(SUM(vs.view_count), 0)::int as total_views,
-        COALESCE(SUM(vs.like_count), 0)::int as total_likes,
-        COALESCE(SUM(vs.comment_count), 0)::int as total_comments,
-        CASE 
-          WHEN COUNT(vc.video_id) > 0 
-          THEN COALESCE(SUM(vs.view_count), 0)::float / COUNT(vc.video_id)::float
-          ELSE 0 
-        END as average_views
-      FROM "Category" c
-      LEFT JOIN "Video_category" vc ON c.id = vc.category_id
-      LEFT JOIN "Video" v ON vc.video_id = v.id AND v.channel_id = ${channel.id} AND v.is_deleted = false
-      LEFT JOIN "Video_snapshot" vs ON v.id = vs.video_id AND vs.is_deleted = false
-      GROUP BY c.id, c.category
-      HAVING COUNT(vc.video_id) > 0
-      ORDER BY video_count DESC, total_views DESC
-    `;
+         // 탑5 카테고리별 통계 조회 (최신 스냅샷 기준)
+     const categoryStats = await prisma.$queryRaw`
+       WITH latest_snapshots AS (
+         SELECT DISTINCT ON (video_id) 
+           video_id, 
+           view_count, 
+           like_count
+         FROM "Video_snapshot" 
+         WHERE is_deleted = false
+         ORDER BY video_id, created_at DESC
+       ),
+       category_video_counts AS (
+         SELECT 
+           c.id as category_id,
+           c.category as category_name,
+           COUNT(DISTINCT vc.video_id) as video_count
+         FROM "Category" c
+         JOIN "Video_category" vc ON c.id = vc.category_id
+         JOIN "Video" v ON vc.video_id = v.id 
+         WHERE v.channel_id = ${channel.id} AND v.is_deleted = false
+         GROUP BY c.id, c.category
+         ORDER BY video_count DESC
+         LIMIT 5
+       ),
+       top_videos_per_category AS (
+         SELECT DISTINCT ON (cvc.category_id)
+           cvc.category_id,
+           v.video_thumbnail_url as top_video_thumbnail
+         FROM category_video_counts cvc
+         JOIN "Video_category" vc ON cvc.category_id = vc.category_id
+         JOIN "Video" v ON vc.video_id = v.id AND v.channel_id = ${channel.id} AND v.is_deleted = false
+         LEFT JOIN latest_snapshots ls ON v.id = ls.video_id
+         ORDER BY cvc.category_id, COALESCE(ls.view_count, 0) DESC
+       )
+       SELECT 
+         cvc.category_id,
+         cvc.category_name,
+         cvc.video_count,
+         COALESCE(SUM(ls.view_count), 0) as total_views,
+         COALESCE(SUM(ls.like_count), 0) as total_likes,
+         CASE 
+           WHEN cvc.video_count > 0 
+           THEN COALESCE(SUM(ls.view_count), 0)::float / cvc.video_count::float
+           ELSE 0 
+         END as average_views,
+         tvpc.top_video_thumbnail
+       FROM category_video_counts cvc
+       JOIN "Video_category" vc ON cvc.category_id = vc.category_id
+       JOIN "Video" v ON vc.video_id = v.id AND v.channel_id = ${channel.id} AND v.is_deleted = false
+       LEFT JOIN latest_snapshots ls ON v.id = ls.video_id
+       LEFT JOIN top_videos_per_category tvpc ON cvc.category_id = tvpc.category_id
+       GROUP BY cvc.category_id, cvc.category_name, cvc.video_count, tvpc.top_video_thumbnail
+       ORDER BY cvc.video_count DESC, total_views DESC
+     `;
     
-    // BigInt를 Number로 변환
-    const processedStats = categoryStats.map(stat => ({
-      category_id: Number(stat.category_id),
-      category_name: stat.category_name,
-      video_count: Number(stat.video_count),
-      total_views: Number(stat.total_views),
-      total_likes: Number(stat.total_likes),
-      total_comments: Number(stat.total_comments),
-      average_views: Number(stat.average_views)
-    }));
+         // BigInt를 Number로 변환
+     const processedStats = categoryStats.map(stat => ({
+       category_id: Number(stat.category_id),
+       category_name: stat.category_name,
+       video_count: Number(stat.video_count),
+       total_views: Number(stat.total_views),
+       total_likes: Number(stat.total_likes),
+       average_views: Number(stat.average_views),
+       top_video_thumbnail: stat.top_video_thumbnail
+     }));
     
     res.json({ success: true, data: processedStats });
   } catch (error) {
@@ -689,5 +846,149 @@ router.post('/snapshot', async (req, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /api/channel/categories/{category_id}/videos:
+ *   get:
+ *     summary: 카테고리별 최신 동영상 5개 조회 (썸네일, 업로드 날짜, 제목, 조회수, 참여율 포함)
+ *     tags: [Channel]
+ *     parameters:
+ *       - in: path
+ *         name: category_id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: 카테고리 ID
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: 카테고리별 최신 동영상 목록 반환
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       id:
+ *                         type: string
+ *                       title:
+ *                         type: string
+ *                       thumbnail:
+ *                         type: string
+ *                       upload_date:
+ *                         type: string
+ *                       view_count:
+ *                         type: integer
+ *                       comment_participation_rate:
+ *                         type: number
+ *                       like_participation_rate:
+ *                         type: number
+ *       400:
+ *         description: 잘못된 요청
+ *       401:
+ *         description: 인증 실패
+ *       404:
+ *         description: 카테고리 또는 채널 없음
+ *       500:
+ *         description: 서버 오류
+ */
+// 카테고리별 최신 동영상 5개 조회 API
+router.get('/categories/:category_id/videos', authenticateToken, async (req, res) => {
+  try {
+    const { category_id } = req.params;
+    const userId = req.user.id;
+    
+    if (!userId) {
+      return res.status(401).json({ success: false, message: 'No user id in token' });
+    }
+
+    if (!category_id || isNaN(parseInt(category_id))) {
+      return res.status(400).json({ success: false, message: 'Invalid category_id' });
+    }
+
+    // 유저의 채널 확인
+    const channel = await prisma.channel.findFirst({ 
+      where: { 
+        user_id: userId,
+        is_deleted: false 
+      } 
+    });
+    
+    if (!channel) {
+      return res.status(404).json({ success: false, message: 'Channel not found' });
+    }
+
+    // 카테고리별 최신 동영상 5개 조회 (최신 스냅샷 기준)
+    const videos = await prisma.$queryRaw`
+      WITH latest_snapshots AS (
+        SELECT DISTINCT ON (video_id) 
+          video_id, 
+          view_count, 
+          like_count,
+          comment_count
+        FROM "Video_snapshot" 
+        WHERE is_deleted = false
+        ORDER BY video_id, created_at DESC
+      )
+      SELECT 
+        v.id,
+        v.video_name as title,
+        v.video_thumbnail_url as thumbnail,
+        v.upload_date,
+        COALESCE(ls.view_count, 0) as view_count,
+        COALESCE(ls.like_count, 0) as like_count,
+        COALESCE(ls.comment_count, 0) as comment_count,
+        CASE 
+          WHEN COALESCE(ls.view_count, 0) > 0 
+          THEN ROUND(((COALESCE(ls.comment_count, 0)::numeric / ls.view_count::numeric) * 100)::numeric, 3)
+          ELSE 0 
+        END as comment_participation_rate,
+        CASE 
+          WHEN COALESCE(ls.view_count, 0) > 0 
+          THEN ROUND(((COALESCE(ls.like_count, 0)::numeric / ls.view_count::numeric) * 100)::numeric, 3)
+          ELSE 0 
+        END as like_participation_rate
+      FROM "Video" v
+      JOIN "Video_category" vc ON v.id = vc.video_id
+      LEFT JOIN latest_snapshots ls ON v.id = ls.video_id
+      WHERE vc.category_id = ${parseInt(category_id)} 
+        AND v.channel_id = ${channel.id} 
+        AND v.is_deleted = false
+      ORDER BY v.upload_date DESC
+      LIMIT 5
+    `;
+
+    // BigInt를 Number로 변환
+    const processedVideos = videos.map(video => ({
+      id: video.id,
+      title: video.title,
+      thumbnail: video.thumbnail,
+      upload_date: video.upload_date ? 
+        new Date(video.upload_date).toISOString().split('T')[0].replace(/-/g, '. ') : null,
+      view_count: Number(video.view_count),
+      comment_participation_rate: Number(video.comment_participation_rate),
+      like_participation_rate: Number(video.like_participation_rate)
+    }));
+
+    res.json({ 
+      success: true, 
+      data: processedVideos 
+    });
+
+  } catch (error) {
+    console.error('카테고리별 동영상 조회 실패:', error.message);
+    res.status(500).json({ 
+      success: false, 
+      error: '카테고리별 동영상 조회 실패' 
+    });
+  }
+});
 
 module.exports = router; 
