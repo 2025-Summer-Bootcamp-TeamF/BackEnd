@@ -210,7 +210,7 @@ router.get('/videos/:video_id/comments/positive', async (req, res) => {
   try {
     const selectQuery = `
       SELECT * FROM "Comment"
-      WHERE video_id = $1 AND sentiment = 'positive';
+      WHERE video_id = $1 AND comment_type = 1;
     `;
     const result = await pool.query(selectQuery, [video_id]);
     res.status(200).json({ success: true, data: result.rows });
@@ -244,7 +244,7 @@ router.get('/videos/:video_id/comments/negative', async (req, res) => {
   try {
     const selectQuery = `
       SELECT * FROM "Comment"
-      WHERE video_id = $1 AND sentiment = 'negative';
+      WHERE video_id = $1 AND comment_type = 2;
     `;
     const result = await pool.query(selectQuery, [video_id]);
     res.status(200).json({ success: true, data: result.rows });
