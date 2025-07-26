@@ -15,7 +15,7 @@ collectDefaultMetrics();
 const passport = require('./config/passport');
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 8000;
 
 // CORS 설정
 app.use(cors({

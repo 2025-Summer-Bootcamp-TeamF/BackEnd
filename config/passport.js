@@ -60,6 +60,17 @@ passport.use(new GoogleStrategy({
              VALUES ($1, $2, $3, $4, $5, false, NOW(), NOW())`,
             [user.id, youtube_channel_id, channel_name, profile_image_url, channel_intro]
           );
+          
+          // 새로 추가된 채널이면 영상 정보와 스냅샷도 함께 저장
+          try {
+            const baseUrl = process.env.BACKEND_URL || 'http://localhost:8000';
+            const snapshotUrl = `${baseUrl}/api/channel/snapshot?channelId=${youtube_channel_id}`;
+            await axios.post(snapshotUrl);
+            console.log(`채널 스냅샷 저장 완료: ${youtube_channel_id}`);
+          } catch (error) {
+            console.error(`채널 스냅샷 저장 실패: ${youtube_channel_id}`, error.message);
+            // 스냅샷 저장 실패해도 로그인은 계속 진행
+          }
         }
       }
 
