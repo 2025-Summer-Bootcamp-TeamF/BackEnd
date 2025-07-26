@@ -1,3 +1,10 @@
+/**
+ * @swagger
+ * tags:
+ *   name: Others
+ *   description: 경쟁 채널 관리 API
+ */
+
 const express = require('express');
 const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
@@ -15,6 +22,70 @@ function extractChannelId(url) {
   return null;
 }
 
+/**
+ * @swagger
+ * /api/others:
+ *   post:
+ *     summary: 경쟁 채널 등록
+ *     description: 유튜브 채널 URL을 입력받아 경쟁 채널로 등록합니다. 새 채널인 경우 자동으로 채널 정보와 영상 데이터를 저장합니다.
+ *     tags: [Others]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - channelUrl
+ *             properties:
+ *               channelUrl:
+ *                 type: string
+ *                 description: "유튜브 채널 URL (예: https://www.youtube.com/channel/UCxxxx 또는 https://www.youtube.com/@닉네임)"
+ *                 example: "https://www.youtube.com/channel/UC123456789"
+ *     responses:
+ *       200:
+ *         description: 경쟁 채널 등록 성공
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     channel_id:
+ *                       type: integer
+ *                       description: DB 채널 ID
+ *                       example: 1
+ *                     youtube_channel_id:
+ *                       type: string
+ *                       description: 유튜브 채널 ID
+ *                       example: "UC123456789"
+ *       400:
+ *         description: 잘못된 요청
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: false
+ *                 message:
+ *                   type: string
+ *                   example: "채널 링크가 필요합니다."
+ *       401:
+ *         description: 인증 실패
+ *       404:
+ *         description: 채널을 찾을 수 없음
+ *       500:
+ *         description: 서버 오류
+ */
 // POST /api/others
 router.post('/', authenticateToken, async (req, res) => {
   const { channelUrl } = req.body;
