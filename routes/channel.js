@@ -39,6 +39,9 @@ router.use((req, res, next) => {
  *                 average_view:
  *                   type: number
  *                   example: 15403
+ *                 daily_average_view:
+ *                   type: number
+ *                   example: 125000
  *       401:
  *         description: 인증 실패 (토큰 없음)
  *         content:
@@ -77,7 +80,23 @@ router.get('/avg-views', authenticateToken, async (req, res) => {
     if (!snapshot) {
       return res.status(404).json({ success: false, message: 'Channel snapshot not found' });
     }
-    res.json({ average_view: snapshot.average_view });
+
+    // 일일 평균 조회수 계산
+    let daily_average_view = 0;
+    if (snapshot.channel_created && snapshot.total_view) {
+      const channelCreatedDate = new Date(snapshot.channel_created);
+      const latestSnapshotDate = new Date(snapshot.created_at);
+      const daysDiff = Math.ceil((latestSnapshotDate - channelCreatedDate) / (1000 * 60 * 60 * 24));
+      
+      if (daysDiff > 0) {
+        daily_average_view = Math.round(snapshot.total_view / daysDiff);
+      }
+    }
+
+    res.json({ 
+      average_view: snapshot.average_view,
+      daily_average_view: daily_average_view
+    });
   } catch (error) {
     console.error(error);
     res.status(500).json({ success: false, message: 'DB error', error: error.message });
