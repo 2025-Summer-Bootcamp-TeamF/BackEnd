@@ -404,12 +404,22 @@ router.post('/snapshot', async (req, res) => {
     return res.status(500).json({ success: false, message: '서버에 GOOGLE_API_KEY가 설정되어 있지 않습니다.' });
   }
   try {
-    // 1. DB 채널 PK 찾기
+    // 1. 영상/스냅샷을 항상 fetch API로 최신화
+    const baseUrl = process.env.BACKEND_URL || 'http://localhost:8000';
+    const fetchUrl = `${baseUrl}/api/channel/videos/fetch?channelId=${channelId}`;
+    const fetchRes = await fetch(fetchUrl, { method: 'GET' });
+    const fetchData = await fetchRes.json();
+    if (!fetchData.success) {
+      return res.status(500).json({ success: false, message: '영상 정보 수집 실패', error: fetchData.message });
+    }
+
+    // 2. DB 채널 PK 찾기
     const dbChannel = await prisma.channel.findFirst({ where: { youtube_channel_id: channelId } });
     if (!dbChannel) {
       return res.status(404).json({ success: false, message: 'DB에 해당 유튜브 채널이 없습니다.' });
     }
-    // 2. 유튜브 API로 채널 정보 가져오기
+
+    // 3. 유튜브 API로 채널 정보 가져오기
     const channelInfoUrl = `https://www.googleapis.com/youtube/v3/channels?key=${YOUTUBE_API_KEY}&id=${channelId}&part=snippet,statistics`;
     const channelInfoResp = await fetch(channelInfoUrl);
     const channelInfoData = await channelInfoResp.json();
@@ -419,22 +429,17 @@ router.post('/snapshot', async (req, res) => {
     }
     const stats = channelItem.statistics || {};
     const snippet = channelItem.snippet || {};
-    // 3. DB에서 해당 채널의 모든 영상 ID 조회
-    const videos = await prisma.video.findMany({ where: { channel_id: dbChannel.id }, select: { id: true } });
     // 4. 각 영상마다 스냅샷 최신화
-    for (const v of videos) {
-      await saveVideoSnapshot(v.id, YOUTUBE_API_KEY);
-    }
     // 5. video/video_snapshot 테이블에서 통계 계산
-    const total_videos = videos.length;
+    const total_videos = fetchData.count; // fetch API에서 반환된 총 영상 수
     let total_view = 0;
     let average_view = 0;
     if (total_videos > 0) {
       // 모든 영상의 최신 스냅샷 조회수 합산
       let viewSum = 0;
-      for (const v of videos) {
+      for (const v of fetchData.data) { // fetch API에서 반환된 영상 목록
         const snap = await prisma.video_snapshot.findFirst({
-          where: { video_id: v.id },
+          where: { video_id: v.videoId },
           orderBy: { created_at: 'desc' }
         });
         if (snap && snap.view_count) viewSum += snap.view_count;
