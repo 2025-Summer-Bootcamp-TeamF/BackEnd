@@ -6,6 +6,7 @@
   GET    /api/videos/:video_id/comments/ratio      - 긍/부정 비율 그래프 데이터 조회
   DELETE /api/videos/:video_id/comments            - 여러 댓글 삭제 (YouTube 숨김 + DB 삭제)
   PUT    /api/videos/:video_id/comments            - 여러 댓글 comment_type 수정 (0,1→2 / 2→1)
+  POST   /api/videos/:video_id/classify_category   - 영상 썸네일 카테고리 분류
 */
 
 /**
@@ -843,6 +844,96 @@ router.put('/videos/:video_id/comments', async (req, res) => {
     updated,
     errors,
   });
+});
+
+// 예시: 영상 썸네일 카테고리 분류 API
+const { OpenAI } = require("openai");
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+
+router.post('/videos/:video_id/classify_category', async (req, res) => {
+  const { video_id } = req.params;
+  // 썸네일 URL을 DB에서 가져오는 예시
+  const videoRes = await pool.query('SELECT video_thumbnail_url, video_name FROM "Video" WHERE id = $1', [video_id]);
+  const video = videoRes.rows[0];
+  if (!video || !video.video_thumbnail_url) {
+    return res.status(404).json({ success: false, message: '썸네일 없음' });
+  }
+  const thumbnailUrl = video.video_thumbnail_url;
+  const videoTitle = video.video_name;
+
+  // 프롬프트 예시
+  const prompt = `
+아래 영상의 썸네일 이미지와 영상 제목을 보고, 썸네일의 특징을 키워드(짧게)와 설명(짧게)로 분류해줘.
+- 영상 제목: "${videoTitle}"
+- 영상의 주제, 출연 인물 등은 카테고리에서 제외
+- 카테고리는 키워드 형식(짧게)
+- 예시: 인물포커스, 큰자막, 화려한색상 등
+- 결과는 JSON 배열로
+[
+  { "category": "인물포커스", "desc": "인물이 화면 중앙에 큼직하게 배치됨" }
+]
+`;
+
+  // OpenAI Vision API 호출
+  const visionResponse = await openai.chat.completions.create({
+    model: "gpt-4o",
+    messages: [
+      {
+        role: "user",
+        content: [
+          { type: "text", text: prompt },
+          { type: "image_url", image_url: { url: thumbnailUrl } }
+        ]
+      }
+    ],
+    max_tokens: 500
+  });
+
+  // Vision API 응답 콘솔 출력
+  console.log('Vision API 응답:', visionResponse.choices[0].message.content);
+
+  // 백틱/```json 제거 후 파싱
+  let categories = [];
+  let content = visionResponse.choices[0].message.content;
+  if (content.startsWith("```json")) {
+    content = content.replace(/^```json/, '').replace(/```$/, '').trim();
+  } else if (content.startsWith("```")) {
+    content = content.replace(/^```/, '').replace(/```$/, '').trim();
+  }
+  try {
+    categories = JSON.parse(content);
+  } catch (e) {
+    categories = [];
+  }
+
+  for (const cat of categories) {
+    // 1. Category 테이블에 이미 있는지 확인
+    let categoryId;
+    const catRes = await pool.query(
+      'SELECT id FROM "Category" WHERE category = $1',
+      [cat.category]
+    );
+    if (catRes.rows.length > 0) {
+      categoryId = catRes.rows[0].id;
+    } else {
+      // 없으면 새로 추가
+      const insertCat = await pool.query(
+        'INSERT INTO "Category" (category) VALUES ($1) RETURNING id',
+        [cat.category]
+      );
+      categoryId = insertCat.rows[0].id;
+    }
+
+    // 2. Video_category 테이블에 연결 (중복 방지)
+    await pool.query(
+      `INSERT INTO "Video_category" (category_id, video_id)
+       VALUES ($1, $2)
+       ON CONFLICT DO NOTHING`,
+      [categoryId, video_id]
+    );
+  }
+
+  res.status(200).json({ success: true, categories });
 });
 
 module.exports = router; 
