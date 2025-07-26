@@ -36,7 +36,7 @@ model Category {
 
 model Channel {
   id                 Int                @id @default(autoincrement())
-  user_id            Int
+  user_id            Int?
   channel_name       String?            @db.VarChar(20)
   profile_image_url  String?
   channel_intro      String?
@@ -44,7 +44,7 @@ model Channel {
   created_at         DateTime           @default(now()) @db.Timestamp(6)
   updated_at         DateTime           @default(now()) @db.Timestamp(6)
   youtube_channel_id String             @db.VarChar(40)
-  User               User               @relation(fields: [user_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  User               User?               @relation(fields: [user_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   Channel_snapshot   Channel_snapshot[]
   Other_channel      Other_channel[]
   Video              Video[]

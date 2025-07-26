@@ -10,6 +10,7 @@ const { authenticateToken } = require('../middleware/auth');
 const { google } = require('googleapis');
 const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
+const { saveVideoSnapshot } = require('../utils/videoSnapshot');
 
 const router = express.Router();
 
@@ -229,6 +230,242 @@ router.get('/videos', authenticateToken, async (req, res) => {
   } catch (error) {
     console.error(error);
     res.status(500).json({ success: false, message: 'DB error', error: error.message });
+  }
+});
+
+/**
+ * @swagger
+ * /channel/videos/fetch:
+ *   get:
+ *     summary: 채널의 모든 영상 정보 및 스냅샷 저장
+ *     tags: [Channel]
+ *     parameters:
+ *       - in: query
+ *         name: channelId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: 유튜브 채널 ID
+ *     responses:
+ *       200:
+ *         description: 영상 정보 및 스냅샷 저장 성공
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 count:
+ *                   type: integer
+ *                 data:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       videoId:
+ *                         type: string
+ *                       title:
+ *                         type: string
+ *                       thumbnail:
+ *                         type: string
+ *                       publishedAt:
+ *                         type: string
+ *       400:
+ *         description: 채널 ID 누락
+ *       404:
+ *         description: DB에 해당 유튜브 채널 없음
+ *       500:
+ *         description: 유튜브 영상 정보 수집 중 오류
+ */
+// 채널의 모든 영상 정보 저장(스냅샷까지)하는 엔드포인트 (playlistItems API 사용, GET+쿼리파라미터)
+router.get('/videos/fetch', async (req, res) => {
+  const channelId = req.query.channelId;
+  if (!channelId) {
+    return res.status(400).json({ success: false, message: '채널 ID가 필요합니다.' });
+  }
+
+  const YOUTUBE_API_KEY = process.env.GOOGLE_API_KEY;
+  if (!YOUTUBE_API_KEY) {
+    return res.status(500).json({ success: false, message: '서버에 GOOGLE_API_KEY가 설정되어 있지 않습니다.' });
+  }
+
+  try {
+    // 1. uploads playlistId 얻기
+    const channelInfoUrl = `https://www.googleapis.com/youtube/v3/channels?part=contentDetails&id=${channelId}&key=${YOUTUBE_API_KEY}`;
+    const channelInfoResp = await fetch(channelInfoUrl);
+    const channelInfoData = await channelInfoResp.json();
+    const uploadsPlaylistId = channelInfoData.items?.[0]?.contentDetails?.relatedPlaylists?.uploads;
+    if (!uploadsPlaylistId) {
+      return res.status(404).json({ success: false, message: '업로드 재생목록(playlistId)을 찾을 수 없습니다.' });
+    }
+
+    // 2. playlistItems API로 모든 영상 가져오기
+    let nextPageToken = '';
+    let totalResults = [];
+    const dbChannel = await prisma.channel.findFirst({ where: { youtube_channel_id: channelId } });
+    if (!dbChannel) {
+      return res.status(404).json({ success: false, message: 'DB에 해당 유튜브 채널이 없습니다.' });
+    }
+    do {
+      const playlistUrl = `https://www.googleapis.com/youtube/v3/playlistItems?part=snippet&playlistId=${uploadsPlaylistId}&maxResults=50&key=${YOUTUBE_API_KEY}${nextPageToken ? `&pageToken=${nextPageToken}` : ''}`;
+      const playlistResp = await fetch(playlistUrl);
+      const playlistData = await playlistResp.json();
+      if (!playlistData.items) {
+        break;
+      }
+      for (const item of playlistData.items) {
+        const snippet = item.snippet;
+        const videoId = snippet.resourceId?.videoId;
+        if (!videoId) continue;
+        // 비디오 테이블에 upsert (정적 정보)
+        const video = await prisma.video.upsert({
+          where: { id: videoId },
+          update: {
+            video_name: snippet.title,
+            video_thumbnail_url: snippet.thumbnails?.high?.url || null,
+            upload_date: snippet.publishedAt ? new Date(snippet.publishedAt) : null,
+            video_link: `https://www.youtube.com/watch?v=${videoId}`,
+          },
+          create: {
+            id: videoId,
+            channel_id: dbChannel.id,
+            video_name: snippet.title,
+            video_thumbnail_url: snippet.thumbnails?.high?.url || null,
+            upload_date: snippet.publishedAt ? new Date(snippet.publishedAt) : null,
+            video_type: null,
+            video_link: `https://www.youtube.com/watch?v=${videoId}`,
+          },
+        });
+        // DB의 채널 pk와 유튜브 채널 ID 매핑 (최초 1회만 필요)
+        if (!video.channel_id) {
+          if (dbChannel) {
+            await prisma.video.update({ where: { id: videoId }, data: { channel_id: dbChannel.id } });
+          }
+        }
+        totalResults.push({
+          videoId,
+          title: snippet.title,
+          thumbnail: snippet.thumbnails?.high?.url || null,
+          publishedAt: snippet.publishedAt,
+        });
+        // 비디오 스냅샷 저장
+        await saveVideoSnapshot(videoId, YOUTUBE_API_KEY);
+      }
+      nextPageToken = playlistData.nextPageToken;
+    } while (nextPageToken);
+
+    res.json({ success: true, count: totalResults.length, data: totalResults });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ success: false, message: '유튜브 영상 정보 수집 중 오류 발생', error: error.message });
+  }
+});
+
+/**
+ * @swagger
+ * /channel/snapshot:
+ *   post:
+ *     summary: 채널 스냅샷 저장 (모든 영상 스냅샷 최신화 후 채널 통계 저장)
+ *     tags: [Channel]
+ *     parameters:
+ *       - in: query
+ *         name: channelId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: 유튜브 채널 ID
+ *     responses:
+ *       200:
+ *         description: 채널 스냅샷 저장 성공
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   type: object
+ *       400:
+ *         description: 채널 ID 누락
+ *       404:
+ *         description: DB에 해당 유튜브 채널 없음
+ *       500:
+ *         description: 채널 스냅샷 저장 중 오류
+ */
+router.post('/snapshot', async (req, res) => {
+  const channelId = req.query.channelId;
+  if (!channelId) {
+    return res.status(400).json({ success: false, message: '채널 ID가 필요합니다.' });
+  }
+  const YOUTUBE_API_KEY = process.env.GOOGLE_API_KEY;
+  if (!YOUTUBE_API_KEY) {
+    return res.status(500).json({ success: false, message: '서버에 GOOGLE_API_KEY가 설정되어 있지 않습니다.' });
+  }
+  try {
+    // 1. DB 채널 PK 찾기
+    const dbChannel = await prisma.channel.findFirst({ where: { youtube_channel_id: channelId } });
+    if (!dbChannel) {
+      return res.status(404).json({ success: false, message: 'DB에 해당 유튜브 채널이 없습니다.' });
+    }
+    // 2. 유튜브 API로 채널 정보 가져오기
+    const channelInfoUrl = `https://www.googleapis.com/youtube/v3/channels?key=${YOUTUBE_API_KEY}&id=${channelId}&part=snippet,statistics`;
+    const channelInfoResp = await fetch(channelInfoUrl);
+    const channelInfoData = await channelInfoResp.json();
+    const channelItem = channelInfoData.items?.[0];
+    if (!channelItem) {
+      return res.status(404).json({ success: false, message: '유튜브 API에서 채널 정보를 찾을 수 없습니다.' });
+    }
+    const stats = channelItem.statistics || {};
+    const snippet = channelItem.snippet || {};
+    // 3. DB에서 해당 채널의 모든 영상 ID 조회
+    const videos = await prisma.video.findMany({ where: { channel_id: dbChannel.id }, select: { id: true } });
+    // 4. 각 영상마다 스냅샷 최신화
+    for (const v of videos) {
+      await saveVideoSnapshot(v.id, YOUTUBE_API_KEY);
+    }
+    // 5. video/video_snapshot 테이블에서 통계 계산
+    const total_videos = videos.length;
+    let total_view = 0;
+    let average_view = 0;
+    if (total_videos > 0) {
+      // 모든 영상의 최신 스냅샷 조회수 합산
+      let viewSum = 0;
+      for (const v of videos) {
+        const snap = await prisma.video_snapshot.findFirst({
+          where: { video_id: v.id },
+          orderBy: { created_at: 'desc' }
+        });
+        if (snap && snap.view_count) viewSum += snap.view_count;
+      }
+      total_view = viewSum;
+      average_view = Math.round(viewSum / total_videos);
+    }
+    const today = new Date();
+    const created = snippet.publishedAt ? new Date(snippet.publishedAt) : null;
+    let daily_view = null;
+    if (created && total_view > 0) {
+      const days = Math.max(1, Math.ceil((today - created) / (1000 * 60 * 60 * 24)));
+      daily_view = Math.round(total_view / days);
+    }
+    // 6. channel_snapshot 테이블에 저장
+    const snapshot = await prisma.channel_snapshot.create({
+      data: {
+        channel_id: dbChannel.id,
+        subscriber: stats.subscriberCount ? parseInt(stats.subscriberCount) : null,
+        total_videos,
+        total_view,
+        channel_created: snippet.publishedAt ? new Date(snippet.publishedAt) : null,
+        average_view,
+        daily_view,
+        nation: snippet.country || null,
+      }
+    });
+    res.json({ success: true, data: snapshot });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ success: false, message: '채널 스냅샷 저장 중 오류', error: error.message });
   }
 });
 

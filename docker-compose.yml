@@ -13,9 +13,9 @@ services:
       - NODE_ENV=development
       - POSTGRES_HOST=postgres
       - POSTGRES_PORT=5432
-      - POSTGRES_USER=myuser
-      - POSTGRES_PASSWORD=mypassword
-      - POSTGRES_DB=mydb
+      - POSTGRES_USER=teamF
+      - POSTGRES_PASSWORD=2025
+      - POSTGRES_DB=teamFdb
     volumes:
       - .:/app
     depends_on:

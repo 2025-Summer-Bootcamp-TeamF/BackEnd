@@ -20,6 +20,7 @@ const axios = require('axios');
 const pool = require('../db');
 const router = express.Router();
 const { authenticateToken } = require('../middleware/auth');
+const { saveVideoSnapshot } = require('../utils/videoSnapshot');
 
 // 댓글 긍정 비율 계산 함수
 async function calculatePositiveRatio(video_id, pool) {
@@ -643,6 +644,49 @@ router.get('/videos/:video_id/comments/ratio', async (req, res) => {
     res.status(200).json({ success: true, positive_ratio });
   } catch (error) {
     res.status(500).json({ error: '긍/부정 비율 계산 실패' });
+  }
+});
+
+/**
+ * @swagger
+ * /api/videos/{video_id}/snapshot:
+ *   post:
+ *     summary: 특정 영상의 스냅샷 저장
+ *     tags: [Videos]
+ *     parameters:
+ *       - in: path
+ *         name: video_id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: 스냅샷을 저장할 영상 ID
+ *     responses:
+ *       200:
+ *         description: 스냅샷 저장 성공
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   type: object
+ *       500:
+ *         description: 스냅샷 저장 실패
+ */
+router.post('/videos/:video_id/snapshot', async (req, res) => {
+  const { video_id } = req.params;
+  const YOUTUBE_API_KEY = process.env.GOOGLE_API_KEY || process.env.YOUTUBE_API_KEY;
+  if (!YOUTUBE_API_KEY) {
+    return res.status(500).json({ success: false, message: '서버에 YouTube API KEY가 설정되어 있지 않습니다.' });
+  }
+  try {
+    const snapshot = await saveVideoSnapshot(video_id, YOUTUBE_API_KEY);
+    res.status(200).json({ success: true, data: snapshot });
+  } catch (error) {
+    console.error('비디오 스냅샷 저장 실패:', error.message);
+    res.status(500).json({ success: false, message: '비디오 스냅샷 저장 실패', error: error.message });
   }
 });
 
