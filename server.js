@@ -45,15 +45,19 @@ app.use(passport.session());
 // 라우트 설정
 const authRoutes = require('./routes/auth');
 app.use('/auth', authRoutes);
+console.log('[Server] Auth routes registered at /auth');
 
 const videoRoutes = require('./routes/videos');
 app.use('/api', videoRoutes);
+console.log('[Server] Video routes registered at /api');
 
 const channelRoutes = require('./routes/channel');
 app.use('/api/channel', channelRoutes);
+console.log('[Server] Channel routes registered at /api/channel');
 
 const othersRoutes = require('./routes/others');
 app.use('/api/others', othersRoutes);
+console.log('[Server] Others routes registered at /api/others');
 
 app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpecs));
 
