@@ -154,4 +154,149 @@ router.delete('/:channel_id', authenticateToken, async (req, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /api/others/videos/compare:
+ *   get:
+ *     summary: 내 채널과 등록된 경쟁 채널들의 최근 3개 영상 및 5주간 업로드 비교
+ *     tags: [Others]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: 비교 데이터 반환 (경쟁 채널이 없으면 내 채널만 반환)
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   type: object
+ *       404:
+ *         description: 내 채널 정보 없음
+ *       500:
+ *         description: 서버 오류
+ */
+router.get('/videos/compare', authenticateToken, async (req, res) => {
+  const userId = req.user.id;
+  try {
+    // 내 채널 정보
+    const myChannel = await prisma.channel.findFirst({ where: { user_id: userId } });
+    if (!myChannel) {
+      return res.status(404).json({ success: false, message: '내 채널 정보가 없습니다.' });
+    }
+    
+    // 내가 등록한 경쟁 채널들 조회
+    const myCompetitors = await prisma.other_channel.findMany({
+      where: { user_id: userId },
+      include: {
+        Channel: true
+      }
+    });
+    
+    // 최근 3개 영상 + 동적 데이터 (조회수, 좋아요, 싫어요)
+    async function getLatestVideos(channelDbId) {
+      const videos = await prisma.video.findMany({
+        where: { channel_id: channelDbId },
+        orderBy: { upload_date: 'desc' },
+        take: 3
+      });
+      const result = [];
+      for (const video of videos) {
+        const snapshot = await prisma.video_snapshot.findFirst({
+          where: { video_id: video.id },
+          orderBy: { created_at: 'desc' }
+        });
+        result.push({
+          videoId: video.id,
+          title: video.video_name,
+          thumbnail: video.video_thumbnail_url,
+          uploadDate: video.upload_date,
+          views: snapshot?.view_count ?? null,
+          likes: snapshot?.like_count ?? null,
+          dislikes: snapshot?.dislike_count ?? null
+        });
+      }
+      return result;
+    }
+    
+    // 최근 5주간 주차별 업로드 개수
+    async function getWeeklyUploads(channelDbId) {
+      const now = new Date();
+      const weeks = [];
+      for (let i = 0; i < 5; i++) {
+        const weekStart = new Date(now);
+        weekStart.setDate(now.getDate() - now.getDay() - 7 * i); // 이번주 일요일 기준
+        weekStart.setHours(0,0,0,0);
+        const weekEnd = new Date(weekStart);
+        weekEnd.setDate(weekStart.getDate() + 7);
+        const count = await prisma.video.count({
+          where: {
+            channel_id: channelDbId,
+            upload_date: {
+              gte: weekStart,
+              lt: weekEnd
+            }
+          }
+        });
+        weeks.unshift({ week: weekStart.toISOString().slice(0,10), count });
+      }
+      return weeks;
+    }
+    
+    // 내 채널 데이터 가져오기
+    const [myVideos, myWeeks] = await Promise.all([
+      getLatestVideos(myChannel.id),
+      getWeeklyUploads(myChannel.id)
+    ]);
+    
+    const myChannelData = {
+      channelId: myChannel.id,
+      channelName: myChannel.channel_name,
+      latestVideos: myVideos,
+      weeklyUploads: myWeeks
+    };
+    
+    // 경쟁 채널이 없으면 내 채널만 반환
+    if (myCompetitors.length === 0) {
+      return res.json({
+        success: true,
+        data: {
+          myChannel: myChannelData,
+          competitors: []
+        }
+      });
+    }
+    
+    // 경쟁 채널들 데이터 가져오기
+    const competitorPromises = myCompetitors.map(async (competitor) => {
+      const [videos, weeks] = await Promise.all([
+        getLatestVideos(competitor.Channel.id),
+        getWeeklyUploads(competitor.Channel.id)
+      ]);
+      return {
+        channelId: competitor.Channel.id,
+        channelName: competitor.Channel.channel_name,
+        latestVideos: videos,
+        weeklyUploads: weeks
+      };
+    });
+    
+    const competitors = await Promise.all(competitorPromises);
+    
+    res.json({
+      success: true,
+      data: {
+        myChannel: myChannelData,
+        competitors: competitors
+      }
+    });
+  } catch (error) {
+    console.error('채널 비교 분석 실패:', error.message);
+    res.status(500).json({ success: false, message: '채널 비교 분석 실패', error: error.message });
+  }
+});
+
 module.exports = router;
