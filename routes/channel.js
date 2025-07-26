@@ -16,6 +16,130 @@ const router = express.Router();
 
 /**
  * @swagger
+ * /channel/my:
+ *   get:
+ *     summary: 현재 로그인한 사용자의 채널 정보 조회
+ *     tags: [Channel]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: 채널 정보 반환
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 channel:
+ *                   type: object
+ *                   properties:
+ *                     id:
+ *                       type: number
+ *                     channel_name:
+ *                       type: string
+ *                     profile_image_url:
+ *                       type: string
+ *                     channel_intro:
+ *                       type: string
+ *                     youtube_channel_id:
+ *                       type: string
+ *                     created_at:
+ *                       type: string
+ *                 snapshot:
+ *                   type: object
+ *                   properties:
+ *                     subscriber:
+ *                       type: number
+ *                     total_videos:
+ *                       type: number
+ *                     total_view:
+ *                       type: number
+ *                     channel_created:
+ *                       type: string
+ *                     nation:
+ *                       type: string
+ *       401:
+ *         description: 인증 실패 (토큰 없음)
+ *       404:
+ *         description: 채널 정보 없음
+ *       500:
+ *         description: 서버 오류
+ */
+// 현재 로그인한 사용자의 채널 정보 조회
+router.get('/my', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    if (!userId) {
+      return res.status(401).json({ success: false, message: 'No user id in token' });
+    }
+
+    console.log('Fetching channel data for user ID:', userId);
+
+    const { Pool } = require('pg');
+    const pool = new Pool({
+      user: process.env.POSTGRES_USER,
+      host: process.env.POSTGRES_HOST,
+      database: process.env.POSTGRES_DB,
+      password: process.env.POSTGRES_PASSWORD,
+      port: process.env.POSTGRES_PORT,
+    });
+
+    // 현재 로그인한 사용자의 채널 정보 조회
+    const channelResult = await pool.query(
+      'SELECT * FROM "Channel" WHERE user_id = $1 AND is_deleted = false',
+      [userId]
+    );
+
+    if (channelResult.rows.length === 0) {
+      console.log('No channel found for user ID:', userId);
+      return res.status(404).json({ 
+        success: false, 
+        message: 'Channel not found for the current user' 
+      });
+    }
+
+    const channel = channelResult.rows[0];
+    console.log('Channel found:', channel);
+
+    // 최신 스냅샷 정보 조회
+    const snapshotResult = await pool.query(
+      'SELECT * FROM "Channel_snapshot" WHERE channel_id = $1 AND is_deleted = false ORDER BY created_at DESC LIMIT 1',
+      [channel.id]
+    );
+
+    const snapshot = snapshotResult.rows[0] || {};
+    console.log('Snapshot found:', snapshot);
+
+    res.json({
+      channel: {
+        id: channel.id,
+        channel_name: channel.channel_name,
+        profile_image_url: channel.profile_image_url,
+        channel_intro: channel.channel_intro,
+        youtube_channel_id: channel.youtube_channel_id,
+        created_at: channel.created_at
+      },
+      snapshot: {
+        subscriber: snapshot.subscriber,
+        total_videos: snapshot.total_videos,
+        total_view: snapshot.total_view,
+        channel_created: snapshot.channel_created,
+        nation: snapshot.nation
+      }
+    });
+
+  } catch (error) {
+    console.error('Error fetching channel data:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Internal server error',
+      error: error.message 
+    });
+  }
+});
+
+/**
+ * @swagger
  * /channel/avg-views:
  *   get:
  *     summary: 채널 평균 조회수 반환
@@ -194,7 +318,7 @@ router.get('/subscriber-change', authenticateToken, async (req, res) => {
  *       500:
  *         description: DB 오류
  */
-// 영상 목록 조회 (DB 기반, 최근 5개)
+// 영상 목록 조회 (DB 기반, 최신순 정렬)
 router.get('/videos', authenticateToken, async (req, res) => {
   try {
     const userId = req.user.id;
@@ -207,8 +331,7 @@ router.get('/videos', authenticateToken, async (req, res) => {
     }
     const videos = await prisma.video.findMany({
       where: { channel_id: channel.id },
-      orderBy: { created_at: 'desc' },
-      take: 5
+      orderBy: { upload_date: 'desc' }
     });
     const result = [];
     for (const video of videos) {
@@ -471,6 +594,109 @@ router.post('/snapshot', async (req, res) => {
   } catch (error) {
     console.error(error);
     res.status(500).json({ success: false, message: '채널 스냅샷 저장 중 오류', error: error.message });
+  }
+});
+
+/**
+ * @swagger
+ * /channel/profile:
+ *   put:
+ *     summary: 채널 프로필 정보 업데이트
+ *     tags: [Channel]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               channel_name:
+ *                 type: string
+ *                 example: "새로운 채널 이름"
+ *               profile_image_url:
+ *                 type: string
+ *                 example: "https://example.com/new_profile.jpg"
+ *               channel_intro:
+ *                 type: string
+ *                 example: "새로운 채널 소개"
+ *     responses:
+ *       200:
+ *         description: 채널 프로필 정보 업데이트 성공
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 message:
+ *                   type: string
+ *                 data:
+ *                   type: object
+ *       401:
+ *         description: 인증 실패 (토큰 없음)
+ *       404:
+ *         description: 채널 정보 없음
+ *       500:
+ *         description: 채널 프로필 업데이트 실패
+ */
+// Channel profile 업데이트
+router.put('/profile', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    if (!userId) {
+      return res.status(401).json({ success: false, message: 'No user id in token' });
+    }
+
+    const { 
+      channel_name, 
+      profile_image_url, 
+      channel_intro 
+    } = req.body;
+
+    const { Pool } = require('pg');
+    const pool = new Pool({
+      user: process.env.POSTGRES_USER,
+      host: process.env.POSTGRES_HOST,
+      database: process.env.POSTGRES_DB,
+      password: process.env.POSTGRES_PASSWORD,
+      port: process.env.POSTGRES_PORT,
+    });
+
+    // 현재 로그인한 사용자의 채널 정보 업데이트
+    const result = await pool.query(
+      `UPDATE "Channel" 
+       SET channel_name = COALESCE($1, channel_name),
+           profile_image_url = COALESCE($2, profile_image_url),
+           channel_intro = COALESCE($3, channel_intro),
+           updated_at = NOW()
+       WHERE user_id = $4 AND is_deleted = false
+       RETURNING *`,
+      [channel_name, profile_image_url, channel_intro, userId]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ 
+        success: false, 
+        message: 'Channel not found for the current user' 
+      });
+    }
+
+    res.json({
+      success: true,
+      message: 'Channel profile updated successfully',
+      data: result.rows[0]
+    });
+
+  } catch (error) {
+    console.error('Error updating channel profile:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Failed to update channel profile',
+      error: error.message 
+    });
   }
 });
 
