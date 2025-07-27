@@ -991,4 +991,154 @@ router.get('/categories/:category_id/videos', authenticateToken, async (req, res
   }
 });
 
+/**
+ * @swagger
+ * /api/channel/{channel_id}/categories/stats:
+ *   get:
+ *     summary: 특정 채널의 카테고리별 통계 반환 (조회수 순)
+ *     tags: [Channel]
+ *     parameters:
+ *       - in: path
+ *         name: channel_id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: 채널 ID
+ *     responses:
+ *       200:
+ *         description: 카테고리별 통계 반환
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 data:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       category_id:
+ *                         type: integer
+ *                         example: 1
+ *                       category_name:
+ *                         type: string
+ *                         example: "인물포커스"
+ *                       video_count:
+ *                         type: integer
+ *                         example: 5
+ *                       average_views:
+ *                         type: number
+ *                         example: 125000.5
+ *                       average_likes:
+ *                         type: number
+ *                         example: 4500.2
+ *                       top_video_thumbnail:
+ *                         type: string
+ *                         example: "https://example.com/thumbnail.jpg"
+ *                       top_video_description:
+ *                         type: string
+ *                         example: "인물이 화면 중앙에 큼직하게 배치됨"
+ *       400:
+ *         description: 잘못된 채널 ID
+ *       404:
+ *         description: 채널 없음
+ *       500:
+ *         description: 서버 오류
+ */
+// 특정 채널의 카테고리별 통계 반환 (조회수 순)
+router.get('/:channel_id/categories/stats', async (req, res) => {
+  try {
+    const { channel_id } = req.params;
+    
+    if (!channel_id || isNaN(parseInt(channel_id))) {
+      return res.status(400).json({ success: false, message: 'Invalid channel_id' });
+    }
+
+    // 채널 존재 확인
+    const channel = await prisma.channel.findFirst({ 
+      where: { 
+        id: parseInt(channel_id),
+        is_deleted: false 
+      } 
+    });
+    
+    if (!channel) {
+      return res.status(404).json({ success: false, message: 'Channel not found' });
+    }
+
+    // 카테고리별 통계 조회 (조회수 순, 상위 5개)
+    const categoryStats = await prisma.$queryRaw`
+      WITH latest_snapshots AS (
+        SELECT DISTINCT ON (video_id) 
+          video_id, 
+          view_count, 
+          like_count
+        FROM "Video_snapshot" 
+        WHERE is_deleted = false
+        ORDER BY video_id, created_at DESC
+      ),
+      category_stats AS (
+        SELECT 
+          c.id as category_id,
+          c.category as category_name,
+          COUNT(DISTINCT vc.video_id) as video_count,
+          AVG(COALESCE(ls.view_count, 0)) as average_views,
+          AVG(COALESCE(ls.like_count, 0)) as average_likes
+        FROM "Category" c
+        JOIN "Video_category" vc ON c.id = vc.category_id
+        JOIN "Video" v ON vc.video_id = v.id 
+        LEFT JOIN latest_snapshots ls ON v.id = ls.video_id
+        WHERE v.channel_id = ${parseInt(channel_id)} AND v.is_deleted = false
+        GROUP BY c.id, c.category
+      ),
+      top_videos_per_category AS (
+        SELECT DISTINCT ON (cs.category_id)
+          cs.category_id,
+          v.video_thumbnail_url as top_video_thumbnail,
+          vc.description as top_video_description
+        FROM category_stats cs
+        JOIN "Video_category" vc ON cs.category_id = vc.category_id
+        JOIN "Video" v ON vc.video_id = v.id AND v.channel_id = ${parseInt(channel_id)} AND v.is_deleted = false
+        LEFT JOIN latest_snapshots ls ON v.id = ls.video_id
+        ORDER BY cs.category_id, COALESCE(ls.like_count, 0) DESC
+      )
+      SELECT 
+        cs.category_id,
+        cs.category_name,
+        cs.video_count,
+        cs.average_views,
+        cs.average_likes,
+        tvpc.top_video_thumbnail,
+        tvpc.top_video_description
+      FROM category_stats cs
+      LEFT JOIN top_videos_per_category tvpc ON cs.category_id = tvpc.category_id
+      ORDER BY cs.average_views DESC
+      LIMIT 5
+    `;
+    
+    // BigInt를 Number로 변환
+    const processedStats = categoryStats.map(stat => ({
+      category_id: Number(stat.category_id),
+      category_name: stat.category_name,
+      video_count: Number(stat.video_count),
+      average_views: Number(stat.average_views),
+      average_likes: Number(stat.average_likes),
+      top_video_thumbnail: stat.top_video_thumbnail,
+      top_video_description: stat.top_video_description
+    }));
+    
+    res.json({ success: true, data: processedStats });
+  } catch (error) {
+    console.error('카테고리별 통계 조회 실패:', error.message);
+    res.status(500).json({ 
+      success: false, 
+      message: '카테고리별 통계 조회 실패',
+      error: error.message 
+    });
+  }
+});
+
 module.exports = router; 
