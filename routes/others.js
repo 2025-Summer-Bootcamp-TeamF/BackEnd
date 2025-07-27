@@ -229,7 +229,8 @@ router.delete('/:channel_id', authenticateToken, async (req, res) => {
  * @swagger
  * /api/others/videos/compare:
  *   get:
- *     summary: 내 채널과 등록된 경쟁 채널들의 최근 3개 영상 및 5주간 업로드 비교
+ *     summary: 내 채널과 등록된 경쟁 채널들의 최근 3개 롱폼 영상 및 5주간 롱폼 업로드 비교
+ *     description: 2분 이상의 롱폼 동영상만 대상으로 비교 분석을 수행합니다.
  *     tags: [Others]
  *     security:
  *       - bearerAuth: []
@@ -267,10 +268,15 @@ router.get('/videos/compare', authenticateToken, async (req, res) => {
       }
     });
     
-    // 최근 3개 영상 + 동적 데이터 (조회수, 좋아요, 싫어요)
+    // 최근 3개 롱폼 영상 + 동적 데이터 (조회수, 좋아요, 싫어요)
     async function getLatestVideos(channelDbId) {
       const videos = await prisma.video.findMany({
-        where: { channel_id: channelDbId },
+        where: { 
+          channel_id: channelDbId,
+          duration: {
+            gte: 120 // 2분(120초) 이상인 동영상만
+          }
+        },
         orderBy: { upload_date: 'desc' },
         take: 3
       });
@@ -293,7 +299,7 @@ router.get('/videos/compare', authenticateToken, async (req, res) => {
       return result;
     }
     
-    // 최근 5주간 주차별 업로드 개수
+    // 최근 5주간 주차별 롱폼 업로드 개수
     async function getWeeklyUploads(channelDbId) {
       const now = new Date();
       const weeks = [];
@@ -306,6 +312,9 @@ router.get('/videos/compare', authenticateToken, async (req, res) => {
         const count = await prisma.video.count({
           where: {
             channel_id: channelDbId,
+            duration: {
+              gte: 120 // 2분(120초) 이상인 동영상만
+            },
             upload_date: {
               gte: weekStart,
               lt: weekEnd
