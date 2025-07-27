@@ -16,11 +16,14 @@ services:
       - POSTGRES_USER=teamF
       - POSTGRES_PASSWORD=2025
       - POSTGRES_DB=teamFdb
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
     volumes:
       - .:/app
     depends_on:
       - n8n
       - postgres
+      - redis
     networks:
       - app-network    
     command: sh -c "npx prisma generate && npm run dev"
@@ -45,6 +48,17 @@ services:
       - ../n8n-data:/home/node/.n8n
     networks:
       - app-network
+
+  redis:
+    image: redis:alpine
+    container_name: redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - app-network
+
   postgres:
     image: postgres:15
     container_name: postgres
@@ -113,6 +127,7 @@ services:
 volumes:
   n8n-data:
     external: true
+  redis_data:
 
 networks:
   app-network:
