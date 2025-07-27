@@ -5,6 +5,9 @@ const authenticateToken = (req, res, next) => {
   const authHeader = req.headers['authorization'];
   const token = authHeader && authHeader.split(' ')[1]; // Bearer TOKEN
 
+  console.log('Auth header:', authHeader); // 디버깅용 로그 추가
+  console.log('Token:', token); // 디버깅용 로그 추가
+
   if (!token) {
     return res.status(401).json({ 
       success: false, 
@@ -13,6 +16,8 @@ const authenticateToken = (req, res, next) => {
   }
 
   const user = verifyToken(token);
+  console.log('Verified user:', user); // 디버깅용 로그 추가
+  
   if (!user) {
     return res.status(403).json({ 
       success: false, 
