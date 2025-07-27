@@ -6,6 +6,9 @@ const cors = require('cors');
 const session = require('express-session');
 require('dotenv').config();
 
+// BullMQ Worker 초기화
+const { n8nWorker } = require('./utils/queue');
+
 const client = require('prom-client');
 const collectDefaultMetrics = client.collectDefaultMetrics;
 collectDefaultMetrics();

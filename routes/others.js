@@ -455,7 +455,8 @@ router.get('/videos/views', authenticateToken, async (req, res) => {
  * @swagger
  * /api/others/videos/compare:
  *   get:
- *     summary: 내 채널과 등록된 경쟁 채널들의 최근 3개 영상 및 5주간 업로드 비교
+ *     summary: 내 채널과 등록된 경쟁 채널들의 최근 3개 롱폼 영상 및 5주간 롱폼 업로드 비교
+ *     description: 2분 이상의 롱폼 동영상만 대상으로 비교 분석을 수행합니다.
  *     tags: [Others]
  *     security:
  *       - bearerAuth: []
@@ -493,7 +494,74 @@ router.get('/videos/compare', authenticateToken, async (req, res) => {
       }
     });
     
+<<<<<<< HEAD
     // 최근 3개 영상 + 동적 데이터 (조회수, 좋아요, 싫어요)
+=======
+    // 최근 3개 롱폼 영상 + 동적 데이터 (조회수, 좋아요, 싫어요)
+    async function getLatestVideos(channelDbId) {
+      const videos = await prisma.video.findMany({
+        where: { 
+          channel_id: channelDbId,
+          duration: {
+            gte: 120 // 2분(120초) 이상인 동영상만
+          }
+        },
+        orderBy: { upload_date: 'desc' },
+        take: 3
+      });
+      const result = [];
+      for (const video of videos) {
+        const snapshot = await prisma.video_snapshot.findFirst({
+          where: { video_id: video.id },
+          orderBy: { created_at: 'desc' }
+        });
+        result.push({
+          videoId: video.id,
+          title: video.video_name,
+          thumbnail: video.video_thumbnail_url,
+          uploadDate: video.upload_date,
+          views: snapshot?.view_count ?? null,
+          likes: snapshot?.like_count ?? null,
+          dislikes: snapshot?.dislike_count ?? null
+        });
+      }
+      return result;
+    }
+    
+    // 최근 5주간 주차별 롱폼 업로드 개수
+    async function getWeeklyUploads(channelDbId) {
+      const now = new Date();
+      const weeks = [];
+      for (let i = 0; i < 5; i++) {
+        const weekStart = new Date(now);
+        weekStart.setDate(now.getDate() - now.getDay() - 7 * i); // 이번주 일요일 기준
+        weekStart.setHours(0,0,0,0);
+        const weekEnd = new Date(weekStart);
+        weekEnd.setDate(weekStart.getDate() + 7);
+        const count = await prisma.video.count({
+          where: {
+            channel_id: channelDbId,
+            duration: {
+              gte: 120 // 2분(120초) 이상인 동영상만
+            },
+            upload_date: {
+              gte: weekStart,
+              lt: weekEnd
+            }
+          }
+        });
+        weeks.unshift({ week: weekStart.toISOString().slice(0,10), count });
+      }
+      return weeks;
+    }
+    
+    // 내 채널 데이터 가져오기
+    const [myVideos, myWeeks] = await Promise.all([
+      getLatestVideos(myChannel.id),
+      getWeeklyUploads(myChannel.id)
+    ]);
+    
+>>>>>>> develop
     const myChannelData = {
       channelId: myChannel.id,
       channelName: myChannel.channel_name,
