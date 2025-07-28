@@ -8,3 +8,4 @@ n8n-workflows/
 .DS_Store
 pgdata/
 *.sql
+!prisma/migrations/**/*.sql
