@@ -30,6 +30,24 @@ app.use(cors({
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
+// 메트릭 수집용 미들웨어
+app.use((req, res, next) => {
+  const end = httpRequestDurationMicroseconds.startTimer();
+  res.on('finish', () => {
+    end({
+      method: req.method,
+      route: req.route ? req.route.path : req.path,
+      code: res.statusCode
+    });
+    requestCount.inc({
+      method: req.method,
+      route: req.route ? req.route.path : req.path,
+      code: res.statusCode
+    });
+  });
+  next();
+});
+
 // 세션 설정 (OAuth 과정에서만 사용)
 app.use(session({
   secret: process.env.JWT_SECRET || 'fallback-secret',
@@ -62,6 +80,26 @@ const othersRoutes = require('./routes/others');
 app.use('/api/others', othersRoutes);
 console.log('[Server] Others routes registered at /api/others');
 
+// Swagger configuration
+const swaggerOptions = {
+  definition: {
+    openapi: '3.0.0',
+    info: {
+      title: 'Video Analysis API',
+      version: '1.0.0',
+      description: 'API for video analysis and insights',
+    },
+    servers: [
+      {
+        url: `http://localhost:${process.env.PORT || 8000}`,
+        description: 'Development server',
+      },
+    ],
+  },
+  apis: ['./routes/*.js'], // Path to the API docs
+};
+
+const swaggerSpecs = swaggerJsdoc(swaggerOptions);
 app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpecs));
 
 // 기본 라우터
@@ -73,11 +111,16 @@ app.get('/metrics', (req, res) => {
   res.set('Content-Type', client.register.contentType);
   res.end(client.register.metrics());
 });
+// Prometheus 메트릭 엔드포인트
+app.get('/metrics', async (req, res) => {
+  res.set('Content-Type', register.contentType);
+  res.end(await register.metrics());
+}); 
 
 // 서버 실행
 app.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`);
 });
 
-// 테스트 코드에서 서버 인스턴스(app)를 불러와서 테스트할 수 있도록 내보냄
+// 테스트용 export
 module.exports = app;

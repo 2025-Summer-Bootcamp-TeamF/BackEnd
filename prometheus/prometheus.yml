@@ -1,5 +1,6 @@
 global:
   scrape_interval: 15s
+  evaluation_interval: 15s #메트릭 평가 인터벌
 
 scrape_configs:
   - job_name: 'cadvisor'
@@ -17,3 +18,7 @@ scrape_configs:
   - job_name: 'prometheus'
     static_configs:
       - targets: ['prometheus:9090'] # Grafana가 데이터 읽어올 수 있게 localhost x
+
+  - job_name: 'express-app'
+    static_configs:
+      - targets: ['express:3001']

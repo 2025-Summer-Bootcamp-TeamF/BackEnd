@@ -92,22 +92,25 @@ services:
       - '--path.rootfs=/host'
 
   prometheus:
-    image: prom/prometheus
+    image: prom/prometheus:latest
     container_name: prometheus
     volumes:
       - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
     ports:
       - "9090:9090"
     networks:
       - monitoring
 
   grafana:
-    image: grafana/grafana
+    image: grafana/grafana:latest
     container_name: grafana
     ports:
       - "3000:3000"
     volumes:
       - ./grafana/provisioning:/etc/grafana/provisioning
+      - ./grafana/data:/var/lib/grafana
     networks:
       - monitoring
 
@@ -123,6 +126,23 @@ services:
       - /var/lib/docker/:/var/lib/docker:ro
     networks:
       - monitoring
+
+  express:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: express
+    working_dir: /app/backend
+    ports:
+      - "3001:3001"
+    volumes:
+      - .:/app
+    networks:
+      - monitoring
+      - app-network
+    depends_on:
+      - postgres
+    command: sh -c "npm install && npm start"
 
 volumes:
   n8n-data:
