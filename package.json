@@ -29,6 +29,7 @@
     "express-session": "^1.18.2",
     "googleapis": "^153.0.0",
     "jsonwebtoken": "^9.0.2",
+    "node-fetch": "^3.3.2",
     "openai": "^5.10.2",
     "passport": "^0.7.0",
     "passport-google-oauth20": "^2.0.0",
