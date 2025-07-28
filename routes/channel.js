@@ -532,6 +532,10 @@ router.get('/categories/stats', authenticateToken, async (req, res) => {
     }
     
          // 탑5 카테고리별 통계 조회 (최신 스냅샷 기준)
+
+    //임시테이블 만들어서 채널스냅샷 만듦
+    // 카테고리 별 영상 개수 임시테이블
+    // 
      const categoryStats = await prisma.$queryRaw`
        WITH latest_snapshots AS (
          SELECT DISTINCT ON (video_id) 
@@ -1141,4 +1145,217 @@ router.get('/:channel_id/categories/stats', async (req, res) => {
   }
 });
 
-module.exports = router; 
+/**
+ * @swagger
+ * /channel/videos/classify-all:
+ *   post:
+ *     summary: 현재 사용자 채널의 모든 영상에 대해 카테고리 분류 수행
+ *     tags: [Channel]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: 모든 영상 카테고리 분류 완료
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: "총 15개 영상의 카테고리 분류가 완료되었습니다."
+ *                 results:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       video_id:
+ *                         type: string
+ *                       video_name:
+ *                         type: string
+ *                       categories:
+ *                         type: array
+ *                         items:
+ *                           type: object
+ *                           properties:
+ *                             category:
+ *                               type: string
+ *                             desc:
+ *                               type: string
+ *       401:
+ *         description: 인증 실패 (토큰 없음)
+ *       404:
+ *         description: 채널 또는 영상 없음
+ *       500:
+ *         description: 카테고리 분류 중 오류
+ */
+// 현재 사용자 채널의 모든 영상에 대해 카테고리 분류 수행
+router.post('/videos/classify-all', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    if (!userId) {
+      return res.status(401).json({ success: false, message: 'No user id in token' });
+    }
+
+    // 사용자의 채널 조회
+    const channel = await prisma.channel.findFirst({ 
+      where: { 
+        user_id: userId,
+        is_deleted: false 
+      } 
+    });
+    
+    if (!channel) {
+      return res.status(404).json({ success: false, message: 'Channel not found' });
+    }
+
+    // 채널의 모든 영상 조회 (썸네일이 있는 영상만)
+    const videos = await prisma.video.findMany({
+      where: { 
+        channel_id: channel.id,
+        is_deleted: false,
+        video_thumbnail_url: {
+          not: null
+        }
+      },
+      select: {
+        id: true,
+        video_name: true,
+        video_thumbnail_url: true
+      }
+    });
+
+    if (videos.length === 0) {
+      return res.status(404).json({ success: false, message: 'No videos found with thumbnails' });
+    }
+
+    // OpenAI 설정
+    const { OpenAI } = require("openai");
+    const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+
+    const results = [];
+    let successCount = 0;
+    let errorCount = 0;
+
+    // 각 영상에 대해 카테고리 분류 수행
+    for (const video of videos) {
+      try {
+        console.log(`카테고리 분류 중: ${video.video_name} (${video.id})`);
+
+        // 프롬프트 생성
+        const prompt = `
+아래 영상의 썸네일 이미지와 영상 제목을 보고, 썸네일의 특징을 키워드(짧게)와 설명(짧게)로 분류해줘.
+- 영상 제목: "${video.video_name}"
+- 영상의 주제, 출연 인물 등은 카테고리에서 제외
+- 카테고리는 키워드 형식(짧게)
+- 예시: 인물포커스, 큰자막, 화려한색상 등
+- 결과는 JSON 배열로
+[
+  { "category": "인물포커스", "desc": "인물이 화면 중앙에 큼직하게 배치됨" }
+]
+`;
+
+        // OpenAI Vision API 호출
+        const visionResponse = await openai.chat.completions.create({
+          model: "gpt-4o",
+          messages: [
+            {
+              role: "user",
+              content: [
+                { type: "text", text: prompt },
+                { type: "image_url", image_url: { url: video.video_thumbnail_url } }
+              ]
+            }
+          ],
+          max_tokens: 500
+        });
+
+        // 응답 파싱
+        let categories = [];
+        let content = visionResponse.choices[0].message.content;
+        if (content.startsWith("```json")) {
+          content = content.replace(/^```json/, '').replace(/```$/, '').trim();
+        } else if (content.startsWith("```")) {
+          content = content.replace(/^```/, '').replace(/```$/, '').trim();
+        }
+        
+        try {
+          categories = JSON.parse(content);
+        } catch (e) {
+          console.warn(`JSON 파싱 실패: ${video.id}`, e.message);
+          categories = [];
+        }
+
+        // 기존 카테고리 연결 삭제 (중복 방지)
+        await prisma.video_category.deleteMany({
+          where: { video_id: video.id }
+        });
+
+        // 카테고리 저장
+        for (const cat of categories) {
+          // Category 테이블에 이미 있는지 확인
+          let category = await prisma.category.findFirst({
+            where: { category: cat.category }
+          });
+          
+          if (!category) {
+            // 없으면 새로 추가
+            category = await prisma.category.create({
+              data: { category: cat.category }
+            });
+          }
+
+          // Video_category 테이블에 연결
+          await prisma.video_category.create({
+            data: {
+              category_id: category.id,
+              video_id: video.id,
+              description: cat.desc || null
+            }
+          });
+        }
+
+        results.push({
+          video_id: video.id,
+          video_name: video.video_name,
+          categories: categories
+        });
+
+        successCount++;
+        console.log(`✅ 카테고리 분류 완료: ${video.video_name} - ${categories.length}개 카테고리`);
+
+        // API 호출 제한 방지를 위한 딜레이
+        await new Promise(resolve => setTimeout(resolve, 1000));
+
+      } catch (error) {
+        console.error(`❌ 카테고리 분류 실패: ${video.video_name}`, error.message);
+        errorCount++;
+        
+        results.push({
+          video_id: video.id,
+          video_name: video.video_name,
+          error: error.message
+        });
+      }
+    }
+
+    res.json({
+      success: true,
+      message: `총 ${videos.length}개 영상 중 ${successCount}개 성공, ${errorCount}개 실패`,
+      results: results
+    });
+
+  } catch (error) {
+    console.error('전체 카테고리 분류 실패:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: '카테고리 분류 중 오류 발생',
+      error: error.message 
+    });
+  }
+});
+
+module.exports = router;

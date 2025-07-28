@@ -145,7 +145,7 @@ router.post('/videos/:video_id/classify_category', async (req, res) => {
  *         description: 분석 결과 저장 및 반환
  *         content:
  *           application/json:
- *             schema:
+ *             schema:  
  *               type: object
  *               properties:
  *                 success:
