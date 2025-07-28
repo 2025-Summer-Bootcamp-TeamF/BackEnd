@@ -191,6 +191,93 @@ const n8nWorker = new Worker('n8n-processing', async (job) => {
       return { status: 'completed', videoId, jobType, data: results };
     }
     
+    if (jobType === 'filter') {
+      const { video_id, filtering_keyword } = data;
+      
+      // 1. Comment 테이블의 is_filtered를 모두 false로 초기화
+      await pool.query(
+        'UPDATE "Comment" SET is_filtered = false WHERE video_id = $1',
+        [video_id]
+      );
+      console.log(`[DB] Comment.is_filtered 초기화 완료: video_id=${video_id}`);
+      
+      // 2. n8n에 필터링 요청
+      const n8nRes = await axios.post('http://n8n:5678/webhook/comments-filtering', {
+        video_id,
+        filtering_keyword
+      });
+      console.log('[n8n filter response]', n8nRes.data);
+      
+      // 3. n8n 응답 파싱
+      let output = n8nRes.data.output;
+      if (output === undefined) {
+        output = n8nRes.data;
+      }
+      
+      const filteredComments = output.comments || output;
+      const results = [];
+      
+      for (const c of filteredComments) {
+        // c: { id, text, is_filtered }
+        
+        // 4. 기존 댓글인지 확인
+        const existingComment = await pool.query(
+          'SELECT youtube_comment_id FROM "Comment" WHERE youtube_comment_id = $1 AND video_id = $2',
+          [c.id, video_id]
+        );
+        
+        if (existingComment.rows.length > 0) {
+          // 기존 댓글: is_filtered만 업데이트
+          const isFiltered = c.is_filtered === 1;
+          await pool.query(
+            'UPDATE "Comment" SET is_filtered = $1 WHERE youtube_comment_id = $2 AND video_id = $3',
+            [isFiltered, c.id, video_id]
+          );
+          console.log(`[DB] 기존 댓글 is_filtered 업데이트: id=${c.id}, is_filtered=${isFiltered}`);
+        } else {
+          // 새 댓글: YouTube API로 메타데이터 조회 후 insert
+          const url = `https://www.googleapis.com/youtube/v3/comments?id=${c.id}&part=snippet&key=${process.env.GOOGLE_API_KEY}`;
+          try {
+            const ytRes = await axios.get(url);
+            const item = ytRes.data.items[0]?.snippet;
+            if (!item) {
+              console.warn(`[YouTube API] 댓글 메타데이터 없음: id=${c.id}`);
+              continue;
+            }
+            
+            const insertQuery = `
+              INSERT INTO "Comment" (
+                youtube_comment_id, author_name, author_id, comment, comment_type, comment_date, is_parent, video_id, is_filtered, created_at, updated_at
+              ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,NOW(),NOW())
+              RETURNING *;
+            `;
+            const values = [
+              c.id,
+              item.authorDisplayName,
+              item.authorChannelId?.value || null,
+              c.text,
+              0, // comment_type = 0 (무조건)
+              item.publishedAt,
+              !item.parentId,
+              video_id,
+              c.is_filtered === 1 // is_filtered
+            ];
+            
+            const result = await pool.query(insertQuery, values);
+            if (result.rows[0]) {
+              console.log(`[DB] 새 댓글 저장 성공: id=${c.id}`);
+              results.push(result.rows[0]);
+            }
+          } catch (err) {
+            console.error(`[YouTube API] 댓글 메타데이터 조회 실패: id=${c.id}, error=${err.message}`);
+          }
+        }
+      }
+      
+      console.log(`필터링 완료: ${job.id}, video_id: ${videoId}`);
+      return { status: 'completed', videoId, jobType, data: results };
+    }
+    
     return { status: 'completed', videoId, jobType };
   } catch (error) {
     console.error(`작업 실패: ${job.id}`, error.message);

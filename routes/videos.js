@@ -937,6 +937,166 @@ router.delete('/videos/:video_id/comments', async (req, res) => {
 
 /**
  * @swagger
+ * /api/videos/{video_id}/comments/filter:
+ *   post:
+ *     summary: 댓글 필터링 요청 (n8n 연동)
+ *     tags: [Videos]
+ *     parameters:
+ *       - in: path
+ *         name: video_id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: 영상 ID
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               filtering_keyword:
+ *                 type: string
+ *                 example: "노래가 좋다는 댓글"
+ *                 description: 필터링할 키워드
+ *     responses:
+ *       200:
+ *         description: 필터링 작업 요청 성공
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 job_id:
+ *                   type: string
+ *                   example: "12345"
+ *                 message:
+ *                   type: string
+ *                   example: "필터링 작업이 큐에 추가되었습니다."
+ *       400:
+ *         description: 잘못된 요청
+ *       500:
+ *         description: 필터링 작업 추가 실패
+ */
+// 댓글 필터링 요청 API
+router.post('/videos/:video_id/comments/filter', async (req, res) => {
+  const { video_id } = req.params;
+  const { filtering_keyword } = req.body;
+
+  if (!filtering_keyword) {
+    return res.status(400).json({ 
+      success: false, 
+      message: '필터링 키워드가 필요합니다.' 
+    });
+  }
+
+  try {
+    // 큐에 필터링 작업 추가
+    const job = await n8nQueue.add('filter', {
+      videoId: video_id,
+      jobType: 'filter',
+      data: { 
+        video_id, 
+        filtering_keyword 
+      }
+    });
+
+    res.status(200).json({
+      success: true,
+      job_id: job.id,
+      message: '필터링 작업이 큐에 추가되었습니다.'
+    });
+  } catch (error) {
+    console.error('필터링 작업 추가 실패:', error.message);
+    res.status(500).json({ 
+      success: false, 
+      message: '필터링 작업 추가 실패',
+      error: error.message 
+    });
+  }
+});
+
+/**
+ * @swagger
+ * /api/videos/{video_id}/comments/filter/status/{job_id}:
+ *   get:
+ *     summary: 댓글 필터링 작업 상태 확인
+ *     tags: [Videos]
+ *     parameters:
+ *       - in: path
+ *         name: video_id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: 비디오 ID
+ *       - in: path
+ *         name: job_id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: 작업 ID
+ *     responses:
+ *       200:
+ *         description: 작업 상태 반환
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 status:
+ *                   type: string
+ *                   enum: [waiting, active, completed, failed]
+ *                   example: "completed"
+ *                 job_id:
+ *                   type: string
+ *                   example: "12345"
+ *                 video_id:
+ *                   type: string
+ *                   example: "tpUxKppsShg"
+ *       404:
+ *         description: 작업을 찾을 수 없음
+ *       500:
+ *         description: 상태 확인 실패
+ */
+// 댓글 필터링 작업 상태 확인 API
+router.get('/videos/:video_id/comments/filter/status/:job_id', async (req, res) => {
+  const { video_id, job_id } = req.params;
+
+  try {
+    const job = await Job.fromId(n8nQueue, job_id);
+    
+    if (!job) {
+      return res.status(404).json({
+        success: false,
+        error: '작업을 찾을 수 없습니다.'
+      });
+    }
+
+    const jobState = await job.getState();
+    
+    res.status(200).json({
+      success: true,
+      status: jobState,
+      job_id: job_id,
+      video_id: video_id
+    });
+  } catch (error) {
+    console.error('필터링 작업 상태 확인 실패:', error.message);
+    res.status(500).json({ 
+      success: false, 
+      error: '필터링 작업 상태 확인 실패' 
+    });
+  }
+});
+
+/**
+ * @swagger
  * /api/videos/{video_id}/comments:
  *   put:
  *     summary: 여러 댓글 comment_type 수정 (0,1→2 / 2→1)
