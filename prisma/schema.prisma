@@ -75,11 +75,8 @@ model Video_category {
   id          Int      @id @default(autoincrement())
   category_id Int
   video_id    String   @db.VarChar(20)
-  description String?  @db.VarChar(200)  // 해당 비디오의 카테고리 설명
   Category    Category @relation(fields: [category_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   Video       Video    @relation(fields: [video_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
-
-  @@unique([category_id, video_id])
 }
 
 model Channel_snapshot {
@@ -129,6 +126,7 @@ model Comment_summary {
   id             Int      @id @default(autoincrement())
   video_id       String   @db.VarChar(20)
   summary        String?
+  summary_title  String?
   positive_ratio Float?
   is_deleted     Boolean  @default(false)
   created_at     DateTime @default(now()) @db.Timestamp(6)
