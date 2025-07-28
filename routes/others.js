@@ -185,9 +185,11 @@ async function getLatestVideos(channelDbId) {
 async function getWeeklyUploads(channelDbId) {
   const now = new Date();
   const weeks = [];
-  for (let i = 0; i < 5; i++) {
+  
+  // 현재 주를 제외하고 과거 5주 계산
+  for (let i = 1; i <= 5; i++) {
     const weekStart = new Date(now);
-    weekStart.setDate(now.getDate() - now.getDay() - 7 * i); // 이번주 일요일 기준
+    weekStart.setDate(now.getDate() - now.getDay() - 7 * i); // 현재 주를 제외한 과거 주들
     weekStart.setHours(0,0,0,0);
     const weekEnd = new Date(weekStart);
     weekEnd.setDate(weekStart.getDate() + 7);
@@ -200,6 +202,8 @@ async function getWeeklyUploads(channelDbId) {
         }
       }
     });
+    // 디버깅 로그 추가
+    console.log(`[DEBUG] channel_id=${channelDbId}, weekStart=${weekStart.toISOString()}, weekEnd=${weekEnd.toISOString()}, count=${count}`);
     weeks.unshift({ week: weekStart.toISOString().slice(0,10), count });
   }
   return weeks;
@@ -644,6 +648,8 @@ router.get('/videos/compare', authenticateToken, async (req, res) => {
             }
           }
         });
+        // 디버깅 로그 추가
+        console.log(`[DEBUG] channel_id=${channelDbId}, weekStart=${weekStart.toISOString()}, weekEnd=${weekEnd.toISOString()}, count=${count}`);
         weeks.unshift({ week: weekStart.toISOString().slice(0,10), count });
       }
       return weeks;
@@ -940,6 +946,14 @@ router.get('/videos/upload-frequency', authenticateToken, async (req, res) => {
       })
     );
 
+    // X축 라벨을 실제 데이터의 week로 생성
+    const xLabels = competitorUploads.map(item => {
+      const date = new Date(item.week);
+      const month = date.getMonth() + 1;
+      const week = Math.ceil((date.getDate() + date.getDay()) / 7);
+      return `${month}월 ${week}주차`;
+    });
+
     res.json({
       success: true,
       data: {
@@ -948,7 +962,8 @@ router.get('/videos/upload-frequency', authenticateToken, async (req, res) => {
           channel_name: myChannel.channel_name,
           weeklyUploads: myWeeklyUploads
         },
-        competitors: competitorUploads
+        competitors: competitorUploads,
+        xLabels: xLabels
       }
     });
   } catch (error) {
