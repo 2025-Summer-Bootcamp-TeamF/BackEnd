@@ -302,7 +302,7 @@ router.get('/avg-views', authenticateToken, async (req, res) => {
  *       500:
  *         description: DB 오류
  */
-// 구독자 변화 추이 반환 (현재 날짜 기준으로 주기별 스냅샷 조회)
+// 구독자 변화 추이 반환 (최근 스냅샷들 조회)
 router.get('/subscriber-change', authenticateToken, async (req, res) => {
   try {
     const userId = req.user.id;
@@ -310,58 +310,34 @@ router.get('/subscriber-change', authenticateToken, async (req, res) => {
       return res.status(401).json({ success: false, message: 'No user id in token' });
     }
     
-    // 주기 파라미터 받기 (기본값 7일)
-    const period = parseInt(req.query.period) || 7;
-    
     // 계정 하나당 채널 한개 가정
     const channel = await prisma.channel.findFirst({ where: { user_id: userId } });
     if (!channel) {
       return res.status(404).json({ success: false, message: 'Channel not found' });
     }
     
-    // 어제 날짜 계산
-    const yesterday = new Date();
-    yesterday.setDate(yesterday.getDate() - 1);
-    yesterday.setHours(0, 0, 0, 0);
+    // 최근 6개의 스냅샷 조회 (구독자 데이터가 있는 것만)
+    const snapshots = await prisma.channel_snapshot.findMany({
+      where: {
+        channel_id: channel.id,
+        subscriber: {
+          not: null
+        }
+      },
+      orderBy: { created_at: 'desc' },
+      take: 6
+    });
     
-    // 6개의 날짜 계산 (어제부터 주기별로 역순)
-    const targetDates = [];
-    for (let i = 0; i < 6; i++) {
-      const date = new Date(yesterday);
-      date.setDate(date.getDate() - (i * period));
-      targetDates.push(date);
-    }
+    // 결과 데이터 생성
+    const result = snapshots.map(snapshot => ({
+      date: snapshot.created_at.toISOString().slice(0, 10),
+      subscriber: snapshot.subscriber
+    }));
     
-    // 각 날짜의 스냅샷 조회
-    const result = [];
-    for (const targetDate of targetDates) {
-      const startOfDay = new Date(targetDate);
-      startOfDay.setHours(0, 0, 0, 0);
-      
-      const endOfDay = new Date(targetDate);
-      endOfDay.setHours(23, 59, 59, 999);
-
-      const snapshot = await prisma.channel_snapshot.findFirst({
-        where: {
-          channel_id: channel.id,
-          created_at: {
-            gte: startOfDay,
-            lt: endOfDay
-          }
-        },
-        orderBy: { created_at: 'desc' }
-      });
-      
-      if (snapshot) {
-        result.push({
-          date: targetDate.toISOString().slice(0, 10),
-          subscriber: snapshot.subscriber
-        });
-      }
-    }
-    
-    // 날짜순으로 정렬
+    // 날짜순으로 정렬 (오래된 것부터)
     result.sort((a, b) => new Date(a.date) - new Date(b.date));
+    
+    console.log(`[DEBUG] 구독자 변화 데이터 조회: ${result.length}개 스냅샷`);
     
     res.json({ success: true, data: result });
   } catch (error) {
