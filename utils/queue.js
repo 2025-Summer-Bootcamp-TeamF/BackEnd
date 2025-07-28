@@ -48,21 +48,42 @@ const n8nWorker = new Worker('n8n-processing', async (job) => {
         video_id: videoId
       });
 
-      // n8n에서 받은 결과의 summary 필드 또는 전체 결과를 JSON 문자열로 저장
-      const summary = n8nRes.data.summary || JSON.stringify(n8nRes.data);
+      // n8n 응답 파싱
+      let output = n8nRes.data.output;
+      if (output === undefined) {
+        output = n8nRes.data;
+      }
+      
+      // output이 문자열인 경우 JSON으로 파싱
+      let parsedOutput;
+      if (typeof output === 'string') {
+        try {
+          parsedOutput = JSON.parse(output);
+        } catch (e) {
+          parsedOutput = { summary_title: "분석 결과", summary: JSON.stringify(output) };
+        }
+      } else {
+        parsedOutput = output;
+      }
+
+      // summary_title 추출
+      const summary_title = parsedOutput.summary_title || "분석 결과";
+      
+      // 전체 결과를 JSON 문자열로 저장 (기존 summary 필드)
+      const summary = JSON.stringify(parsedOutput);
 
       // 긍정 비율 계산
       const positive_ratio = await calculatePositiveRatio(videoId, pool);
 
-      // DB에 저장
+      // DB에 저장 (summary_title 추가)
       const insertQuery = `
-        INSERT INTO "Comment_summary" (video_id, summary, positive_ratio, created_at)
-        VALUES ($1, $2, $3, NOW())
+        INSERT INTO "Comment_summary" (video_id, summary, summary_title, positive_ratio, created_at)
+        VALUES ($1, $2, $3, $4, NOW())
         RETURNING *;
       `;
-      const result = await pool.query(insertQuery, [videoId, summary, positive_ratio]);
+      const result = await pool.query(insertQuery, [videoId, summary, summary_title, positive_ratio]);
 
-      console.log(`분석 완료: ${job.id}, video_id: ${videoId}`);
+      console.log(`분석 완료: ${job.id}, video_id: ${videoId}, summary_title: ${summary_title}`);
       return { status: 'completed', videoId, jobType, data: result.rows[0] };
     }
     
