@@ -17,7 +17,10 @@ const express = require('express');
 const passport = require('passport');
 const { verifyToken, generateToken } = require('../utils/jwtUtils');
 const { authenticateToken } = require('../middleware/auth');
+const { PrismaClient } = require('@prisma/client');
 const router = express.Router();
+
+const prisma = new PrismaClient();
 
 /**
  * @swagger
@@ -105,11 +108,79 @@ router.get('/failure', (req, res) => {
  *                   type: string
  */
 // 로그아웃 (클라이언트에서 토큰 삭제)
-router.post('/logout', (req, res) => {
-  res.json({
-    success: true,
-    message: 'Logged out successfully'
-  });
+router.post('/logout', async (req, res) => {
+  console.log('[DEBUG] 로그아웃 API 호출됨');
+  try {
+    // 사용자 ID 추출 (토큰에서)
+    const authHeader = req.headers.authorization;
+    console.log('[DEBUG] Authorization 헤더:', authHeader);
+    
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      const token = authHeader.substring(7);
+      console.log('[DEBUG] 토큰 추출됨');
+      
+      const decoded = verifyToken(token);
+      console.log('[DEBUG] 토큰 디코딩 결과:', decoded);
+      
+      if (decoded && decoded.id) {
+        console.log('[DEBUG] 사용자 ID:', decoded.id);
+        
+        // 해당 사용자의 채널 ID 찾기
+        const userChannel = await prisma.channel.findFirst({
+          where: { user_id: decoded.id }
+        });
+        
+        console.log('[DEBUG] 사용자 채널:', userChannel);
+        
+        if (userChannel) {
+          // 해당 채널의 영상들 찾기
+          const channelVideos = await prisma.video.findMany({
+            where: { channel_id: userChannel.id },
+            select: { id: true }
+          });
+          
+          const videoIds = channelVideos.map(v => v.id);
+          console.log('[DEBUG] 채널 영상 ID들:', videoIds);
+          
+          // 카테고리 분류 데이터 삭제
+          if (videoIds.length > 0) {
+            // 1. Video_category 테이블에서 해당 영상들의 분류 데이터 삭제
+            const deletedVideoCategories = await prisma.video_category.deleteMany({
+              where: {
+                video_id: {
+                  in: videoIds
+                }
+              }
+            });
+            
+            // 2. 모든 Category 삭제 (사용자가 로그아웃하면 모든 카테고리 초기화)
+            const deletedCategories = await prisma.category.deleteMany({});
+            
+            console.log(`[DEBUG] 로그아웃 시 카테고리 분류 데이터 삭제 완료: ${videoIds.length}개 영상, ${deletedVideoCategories.count}개 Video_category, ${deletedCategories.count}개 Category`);
+          } else {
+            console.log('[DEBUG] 삭제할 영상이 없음');
+          }
+        } else {
+          console.log('[DEBUG] 사용자 채널을 찾을 수 없음');
+        }
+      } else {
+        console.log('[DEBUG] 토큰에서 사용자 ID를 추출할 수 없음');
+      }
+    } else {
+      console.log('[DEBUG] Authorization 헤더가 없거나 Bearer 형식이 아님');
+    }
+    
+    res.json({
+      success: true,
+      message: 'Logged out successfully'
+    });
+  } catch (error) {
+    console.error('[DEBUG] 로그아웃 시 카테고리 데이터 삭제 실패:', error);
+    res.json({
+      success: true,
+      message: 'Logged out successfully'
+    });
+  }
 });
 
 module.exports = router; 
