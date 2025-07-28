@@ -1,18 +1,28 @@
-// backend/server.js
+const swaggerUi = require('swagger-ui-express');
+const swaggerSpecs = require('./swagger');
+
 const express = require('express');
 const cors = require('cors');
 const session = require('express-session');
 require('dotenv').config();
 
+// BullMQ Worker 초기화
+const { n8nWorker } = require('./utils/queue');
+
+const client = require('prom-client');
+const collectDefaultMetrics = client.collectDefaultMetrics;
+collectDefaultMetrics();
+
+
 // Passport 설정
 const passport = require('./config/passport');
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 8000;
 
 // CORS 설정
 app.use(cors({
-  origin: process.env.FRONTEND_URL || 'http://localhost:3001',
+  origin: process.env.FRONTEND_URL || 'http://localhost:5173',
   credentials: true
 }));
 
@@ -38,13 +48,30 @@ app.use(passport.session());
 // 라우트 설정
 const authRoutes = require('./routes/auth');
 app.use('/auth', authRoutes);
+console.log('[Server] Auth routes registered at /auth');
 
 const videoRoutes = require('./routes/videos');
 app.use('/api', videoRoutes);
+console.log('[Server] Video routes registered at /api');
+
+const channelRoutes = require('./routes/channel');
+app.use('/api/channel', channelRoutes);
+console.log('[Server] Channel routes registered at /api/channel');
+
+const othersRoutes = require('./routes/others');
+app.use('/api/others', othersRoutes);
+console.log('[Server] Others routes registered at /api/others');
+
+app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpecs));
 
 // 기본 라우터
 app.get('/', (req, res) => {
   res.send('Backend server is running!');
+});
+
+app.get('/metrics', (req, res) => {
+  res.set('Content-Type', client.register.contentType);
+  res.end(client.register.metrics());
 });
 
 // 서버 실행

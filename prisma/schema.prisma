@@ -7,22 +7,13 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-
-
-enum Status {
-  approved
-  rejected
-  deleted
-  none
-}
-
 model User {
-  id              Int      @id @default(autoincrement())
-  youtube_user_id String   @db.VarChar(30)
+  id              Int             @id @default(autoincrement())
+  youtube_user_id String          @db.VarChar(30)
   email           String
-  is_deleted      Boolean  @default(false)
-  created_at      DateTime @default(now()) @db.Timestamp(6)
-  updated_at      DateTime @default(now()) @db.Timestamp(6)
+  is_deleted      Boolean         @default(false)
+  created_at      DateTime        @default(now()) @db.Timestamp(6)
+  updated_at      DateTime        @default(now()) @db.Timestamp(6)
   Channel         Channel[]
   Other_channel   Other_channel[]
 }
@@ -36,7 +27,7 @@ model Category {
 
 model Channel {
   id                 Int                @id @default(autoincrement())
-  user_id            Int
+  user_id            Int?
   channel_name       String?            @db.VarChar(20)
   profile_image_url  String?
   channel_intro      String?
@@ -44,7 +35,7 @@ model Channel {
   created_at         DateTime           @default(now()) @db.Timestamp(6)
   updated_at         DateTime           @default(now()) @db.Timestamp(6)
   youtube_channel_id String             @db.VarChar(40)
-  User               User               @relation(fields: [user_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  User               User?              @relation(fields: [user_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   Channel_snapshot   Channel_snapshot[]
   Other_channel      Other_channel[]
   Video              Video[]
@@ -56,25 +47,28 @@ model Other_channel {
   channel_id Int
   Channel    Channel @relation(fields: [channel_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   User       User    @relation(fields: [user_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
   @@unique([user_id, channel_id])
 }
 
 model Video {
-  id                  String           @id 
-  channel_id          Int
-  video_name          String?
-  video_thumbnail_url String?
-  upload_date         DateTime?        @db.Timestamp(6)
-  video_type          Boolean?
-  video_link          String?
-  is_deleted          Boolean          @default(false)
-  created_at          DateTime         @default(now()) @db.Timestamp(6)
-  updated_at          DateTime         @default(now()) @db.Timestamp(6)
-  Comment             Comment[]
-  Channel             Channel          @relation(fields: [channel_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  Video_category      Video_category[]
-  Video_snapshot      Video_snapshot[]
-  Comment_summary     Comment_summary[]
+  id                    String            @id
+  channel_id            Int
+  video_name            String?
+  video_thumbnail_url   String?
+  upload_date           DateTime?         @db.Timestamp(6)
+  video_type            Boolean?
+  video_link            String?
+  duration              Int?              // 동영상 길이 (초 단위)
+  is_deleted            Boolean           @default(false)
+  created_at            DateTime          @default(now()) @db.Timestamp(6)
+  updated_at            DateTime          @default(now()) @db.Timestamp(6)
+  comment_classified_at DateTime?         @default(dbgenerated("'2000-01-01 00:00:00'::timestamp without time zone")) @db.Timestamp(6)
+  Comment               Comment[]
+  Comment_summary       Comment_summary[]
+  Channel               Channel           @relation(fields: [channel_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  Video_category        Video_category[]
+  Video_snapshot        Video_snapshot[]
 }
 
 model Video_category {
@@ -113,28 +107,35 @@ model Video_snapshot {
 }
 
 model Comment {
-  id           Int          @id @default(autoincrement())
-  author_name  String?
-  author_id    String?      @db.VarChar(30)
-  comment      String?
-  comment_type Int?
-  comment_date DateTime?    @db.Timestamp(6)
-  is_parent    Boolean?
-  is_filtered  Boolean     @default(false)
-  created_at   DateTime     @default(now()) @db.Timestamp(6)
-  updated_at   DateTime     @default(now()) @db.Timestamp(6)
-  video_id     String       @db.VarChar(20)
-  youtube_comment_id String
-  Video        Video        @relation(fields: [video_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  id                 Int       @id @default(autoincrement())
+  author_name        String?
+  author_id          String?   @db.VarChar(30)
+  comment            String?
+  comment_type       Int?
+  comment_date       DateTime? @db.Timestamp(6)
+  is_parent          Boolean?
+  is_filtered        Boolean   @default(false)
+  created_at         DateTime  @default(now()) @db.Timestamp(6)
+  updated_at         DateTime  @default(now()) @db.Timestamp(6)
+  video_id           String    @db.VarChar(20)
+  youtube_comment_id String    @unique
+  Video              Video     @relation(fields: [video_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
 }
 
 model Comment_summary {
   id             Int      @id @default(autoincrement())
   video_id       String   @db.VarChar(20)
   summary        String?
+  summary_title  String?
   positive_ratio Float?
   is_deleted     Boolean  @default(false)
   created_at     DateTime @default(now()) @db.Timestamp(6)
   Video          Video    @relation(fields: [video_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
 }
 
+enum Status {
+  approved
+  rejected
+  deleted
+  none
+}

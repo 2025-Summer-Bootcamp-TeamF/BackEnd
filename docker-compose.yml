@@ -6,7 +6,7 @@ services:
       dockerfile: Dockerfile
     container_name: backend
     ports:
-      - "3000:3000"
+      - "8000:8000"
     env_file:
       - .env
     environment:
@@ -16,13 +16,18 @@ services:
       - POSTGRES_USER=teamF
       - POSTGRES_PASSWORD=2025
       - POSTGRES_DB=teamFdb
-      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
     volumes:
       - .:/app
     depends_on:
       - n8n
       - postgres
+      - redis
+    networks:
+      - app-network    
     command: sh -c "npx prisma generate && npm run dev"
+
   n8n:
     image: n8nio/n8n:1.102.0
     container_name: n8n
@@ -41,6 +46,19 @@ services:
       - N8N_API_KEY=devkey123
     volumes:
       - ../n8n-data:/home/node/.n8n
+    networks:
+      - app-network
+
+  redis:
+    image: redis:alpine
+    container_name: redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - app-network
+
   postgres:
     image: postgres:15
     container_name: postgres
@@ -54,6 +72,63 @@ services:
     volumes:
       - ./pgdata:/var/lib/postgresql/data
       - ./initdb:/docker-entrypoint-initdb.d
+    networks:
+      - app-network
+
+  node-exporter:
+    image: prom/node-exporter
+    container_name: node-exporter
+    ports:
+      - "9100:9100"
+    networks:
+      - monitoring
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/host:ro
+    command:
+      - '--path.procfs=/host/proc'
+      - '--path.sysfs=/host/sys'
+      - '--path.rootfs=/host'
+
+  prometheus:
+    image: prom/prometheus
+    container_name: prometheus
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+    ports:
+      - "9090:9090"
+    networks:
+      - monitoring
+
+  grafana:
+    image: grafana/grafana
+    container_name: grafana
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning
+    networks:
+      - monitoring
+
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:latest
+    container_name: cadvisor
+    ports:
+      - "8080:8080"
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+    networks:
+      - monitoring
+
 volumes:
   n8n-data:
     external: true
+  redis_data:
+
+networks:
+  app-network:
+  monitoring:
