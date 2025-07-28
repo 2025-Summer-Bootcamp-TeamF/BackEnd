@@ -531,77 +531,142 @@ router.get('/categories/stats', authenticateToken, async (req, res) => {
       return res.status(404).json({ success: false, message: 'Channel not found' });
     }
     
-         // 탑5 카테고리별 통계 조회 (최신 스냅샷 기준)
+    // 탑5 카테고리별 통계 조회 (최신 스냅샷 기준)
+    const categoryStats = await prisma.$queryRaw`
+      WITH latest_snapshots AS (
+        SELECT DISTINCT ON (video_id) 
+          video_id, 
+          view_count, 
+          like_count
+        FROM "Video_snapshot" 
+        WHERE is_deleted = false
+        ORDER BY video_id, created_at DESC
+      ),
+      category_video_counts AS (
+        SELECT 
+          c.id as category_id,
+          c.category as category_name,
+          COUNT(DISTINCT vc.video_id) as video_count
+        FROM "Category" c
+        JOIN "Video_category" vc ON c.id = vc.category_id
+        JOIN "Video" v ON vc.video_id = v.id 
+        WHERE v.channel_id = ${channel.id} AND v.is_deleted = false
+        GROUP BY c.id, c.category
+        ORDER BY video_count DESC
+        LIMIT 5
+      ),
+      top_videos_per_category AS (
+        SELECT DISTINCT ON (cvc.category_id)
+          cvc.category_id,
+          v.video_thumbnail_url as top_video_thumbnail
+        FROM category_video_counts cvc
+        JOIN "Video_category" vc ON cvc.category_id = vc.category_id
+        JOIN "Video" v ON vc.video_id = v.id AND v.channel_id = ${channel.id} AND v.is_deleted = false
+        LEFT JOIN latest_snapshots ls ON v.id = ls.video_id
+        ORDER BY cvc.category_id, COALESCE(ls.view_count, 0) DESC
+      )
+      SELECT 
+        cvc.category_id,
+        cvc.category_name,
+        cvc.video_count,
+        COALESCE(SUM(ls.view_count), 0) as total_views,
+        COALESCE(SUM(ls.like_count), 0) as total_likes,
+        CASE 
+          WHEN cvc.video_count > 0 
+          THEN COALESCE(SUM(ls.view_count), 0)::float / cvc.video_count::float
+          ELSE 0 
+        END as average_views,
+        tvpc.top_video_thumbnail
+      FROM category_video_counts cvc
+      JOIN "Video_category" vc ON cvc.category_id = vc.category_id
+      JOIN "Video" v ON vc.video_id = v.id AND v.channel_id = ${channel.id} AND v.is_deleted = false
+      LEFT JOIN latest_snapshots ls ON v.id = ls.video_id
+      LEFT JOIN top_videos_per_category tvpc ON cvc.category_id = tvpc.category_id
+      GROUP BY cvc.category_id, cvc.category_name, cvc.video_count, tvpc.top_video_thumbnail
+      ORDER BY cvc.video_count DESC, total_views DESC
+    `;
+    
+    // BigInt를 Number로 변환
+    const processedStats = categoryStats.map(stat => ({
+      category_id: Number(stat.category_id),
+      category_name: stat.category_name,
+      video_count: Number(stat.video_count),
+      total_views: Number(stat.total_views),
+      total_likes: Number(stat.total_likes),
+      average_views: Number(stat.average_views),
+      top_video_thumbnail: stat.top_video_thumbnail
+    }));
 
-    //임시테이블 만들어서 채널스냅샷 만듦
-    // 카테고리 별 영상 개수 임시테이블
-    // 
-     const categoryStats = await prisma.$queryRaw`
-       WITH latest_snapshots AS (
-         SELECT DISTINCT ON (video_id) 
-           video_id, 
-           view_count, 
-           like_count
-         FROM "Video_snapshot" 
-         WHERE is_deleted = false
-         ORDER BY video_id, created_at DESC
-       ),
-       category_video_counts AS (
-         SELECT 
-           c.id as category_id,
-           c.category as category_name,
-           COUNT(DISTINCT vc.video_id) as video_count
-         FROM "Category" c
-         JOIN "Video_category" vc ON c.id = vc.category_id
-         JOIN "Video" v ON vc.video_id = v.id 
-         WHERE v.channel_id = ${channel.id} AND v.is_deleted = false
-         GROUP BY c.id, c.category
-         ORDER BY video_count DESC
-         LIMIT 5
-       ),
-       top_videos_per_category AS (
-         SELECT DISTINCT ON (cvc.category_id)
-           cvc.category_id,
-           v.video_thumbnail_url as top_video_thumbnail
-         FROM category_video_counts cvc
-         JOIN "Video_category" vc ON cvc.category_id = vc.category_id
-         JOIN "Video" v ON vc.video_id = v.id AND v.channel_id = ${channel.id} AND v.is_deleted = false
-         LEFT JOIN latest_snapshots ls ON v.id = ls.video_id
-         ORDER BY cvc.category_id, COALESCE(ls.view_count, 0) DESC
-       )
-       SELECT 
-         cvc.category_id,
-         cvc.category_name,
-         cvc.video_count,
-         COALESCE(SUM(ls.view_count), 0) as total_views,
-         COALESCE(SUM(ls.like_count), 0) as total_likes,
-         CASE 
-           WHEN cvc.video_count > 0 
-           THEN COALESCE(SUM(ls.view_count), 0)::float / cvc.video_count::float
-           ELSE 0 
-         END as average_views,
-         tvpc.top_video_thumbnail
-       FROM category_video_counts cvc
-       JOIN "Video_category" vc ON cvc.category_id = vc.category_id
-       JOIN "Video" v ON vc.video_id = v.id AND v.channel_id = ${channel.id} AND v.is_deleted = false
-       LEFT JOIN latest_snapshots ls ON v.id = ls.video_id
-       LEFT JOIN top_videos_per_category tvpc ON cvc.category_id = tvpc.category_id
-       GROUP BY cvc.category_id, cvc.category_name, cvc.video_count, tvpc.top_video_thumbnail
-       ORDER BY cvc.video_count DESC, total_views DESC
-     `;
+    // GPT로 카테고리별 분석 추가
+    const { OpenAI } = require("openai");
+    const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+
+    const enhancedStats = [];
     
-         // BigInt를 Number로 변환
-     const processedStats = categoryStats.map(stat => ({
-       category_id: Number(stat.category_id),
-       category_name: stat.category_name,
-       video_count: Number(stat.video_count),
-       total_views: Number(stat.total_views),
-       total_likes: Number(stat.total_likes),
-       average_views: Number(stat.average_views),
-       top_video_thumbnail: stat.top_video_thumbnail
-     }));
+    for (const stat of processedStats) {
+      try {
+        // 해당 카테고리의 설명들 수집
+        const categoryDescriptions = await prisma.$queryRaw`
+          SELECT vc.description
+          FROM "Video_category" vc
+          JOIN "Video" v ON vc.video_id = v.id
+          WHERE vc.category_id = ${stat.category_id}
+            AND v.channel_id = ${channel.id}
+            AND v.is_deleted = false
+            AND vc.description IS NOT NULL
+          ORDER BY v.upload_date DESC
+          LIMIT 10
+        `;
+
+        const descriptions = categoryDescriptions.map(d => d.description).filter(Boolean);
+        
+        if (descriptions.length > 0) {
+          // GPT로 카테고리 분석
+          const prompt = `
+다음은 "${stat.category_name}" 카테고리에 대한 설명들입니다:
+
+${descriptions.map((desc, index) => `${index + 1}. ${desc}`).join('\n')}
+
+이 카테고리의 시각적 특징을 한 줄로 요약해주세요.
+
+중요: 주제나 콘텐츠 내용은 전혀 언급하지 마세요. 오직 썸네일의 구도, 색감등의 특징만 분석하세요.
+
+예시:
+- "큰자막": "제목이나 자막이 크고 굵게 표시되어 시선을 끄는 시각적 특징"
+- "인물포커스": "인물이 화면 중앙에 크게 배치되어 주목받는 구도"
+- "화려한색상": "밝고 선명한 색감으로 화려한 느낌을 주는 시각적 특징"
+
+답변은 1줄로 간단하게 해주세요.
+`;
+
+          const gptResponse = await openai.chat.completions.create({
+            model: "gpt-4o-mini",
+            messages: [{ role: "user", content: prompt }],
+            max_tokens: 100
+          });
+
+          const analysis = gptResponse.choices[0].message.content.trim();
+          
+          enhancedStats.push({
+            ...stat,
+            category_analysis: analysis
+          });
+        } else {
+          enhancedStats.push({
+            ...stat,
+            category_analysis: "분석할 설명이 없습니다."
+          });
+        }
+      } catch (error) {
+        console.error(`GPT 분석 실패 (카테고리: ${stat.category_name}):`, error.message);
+        enhancedStats.push({
+          ...stat,
+          category_analysis: "분석 중 오류가 발생했습니다."
+        });
+      }
+    }
     
-    res.json({ success: true, data: processedStats });
+    res.json({ success: true, data: enhancedStats });
   } catch (error) {
     console.error(error);
     res.status(500).json({ success: false, message: 'DB error', error: error.message });
@@ -1251,7 +1316,7 @@ router.post('/videos/classify-all', authenticateToken, async (req, res) => {
 - 영상 제목: "${video.video_name}"
 - 영상의 주제, 출연 인물 등은 카테고리에서 제외
 - 카테고리는 키워드 형식(짧게)
-- 예시: 인물포커스, 큰자막, 화려한색상 등
+- 예시: 인물포커스, 큰자막, 화려한색상, 사물포커스, 인물의대비, 인물대비, 감정표현, 비대칭구도, 짧은제목, 상세한제목, 질문형제목, 목록형제목   등
 - 결과는 JSON 배열로
 [
   { "category": "인물포커스", "desc": "인물이 화면 중앙에 큼직하게 배치됨" }
