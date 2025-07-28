@@ -662,7 +662,7 @@ router.get('/videos/fetch', async (req, res) => {
   }
 
   try {
-    // 1. uploads playlistId 얻기
+    // 1. uploads playlistId 얻기 (롱폼)
     const channelInfoUrl = `https://www.googleapis.com/youtube/v3/channels?part=contentDetails&id=${channelId}&key=${YOUTUBE_API_KEY}`;
     const channelInfoResp = await fetch(channelInfoUrl);
     const channelInfoData = await channelInfoResp.json();
@@ -671,7 +671,26 @@ router.get('/videos/fetch', async (req, res) => {
       return res.status(404).json({ success: false, message: '업로드 재생목록(playlistId)을 찾을 수 없습니다.' });
     }
 
-    // 2. playlistItems API로 모든 영상 가져오기
+    // 1-2. 숏츠 재생목록Id(UUSH...) 생성
+    const shortsPlaylistId = 'UUSH' + channelId.slice(2);
+
+    // 1-3. 숏츠 videoId 목록 수집
+    let shortsVideoIds = new Set();
+    let shortsNextPageToken = '';
+    do {
+      const shortsUrl = `https://www.googleapis.com/youtube/v3/playlistItems?part=snippet&playlistId=${shortsPlaylistId}&maxResults=50&key=${YOUTUBE_API_KEY}${shortsNextPageToken ? `&pageToken=${shortsNextPageToken}` : ''}`;
+      const shortsResp = await fetch(shortsUrl);
+      const shortsData = await shortsResp.json();
+      if (shortsData.items) {
+        for (const item of shortsData.items) {
+          const sId = item.snippet?.resourceId?.videoId;
+          if (sId) shortsVideoIds.add(sId);
+        }
+      }
+      shortsNextPageToken = shortsData.nextPageToken;
+    } while (shortsNextPageToken);
+
+    // 2. playlistItems API로 모든 영상 가져오기 (롱폼+숏츠)
     let nextPageToken = '';
     let totalResults = [];
     const dbChannel = await prisma.channel.findFirst({ where: { youtube_channel_id: channelId } });
@@ -689,6 +708,11 @@ router.get('/videos/fetch', async (req, res) => {
         const snippet = item.snippet;
         const videoId = snippet.resourceId?.videoId;
         if (!videoId) continue;
+        // 숏츠 videoId는 제외
+        if (shortsVideoIds.has(videoId)) {
+          console.log(`숏츠 영상 제외: ${videoId}`);
+          continue;
+        }
         // 비디오 테이블에 upsert (정적 정보)
         const video = await prisma.video.upsert({
           where: { id: videoId },
