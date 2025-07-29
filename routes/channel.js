@@ -420,7 +420,8 @@ router.get('/videos', authenticateToken, async (req, res) => {
         orderBy: { created_at: 'desc' }
       });
       result.push({
-        videoId: video.id,
+        videoId: video.id, // 이 값이 실제 YouTube video ID
+        video_id: video.id, // YouTube video ID (video.id와 동일)
         title: video.video_name,
         thumbnail: video.video_thumbnail_url,
         publishedAt: video.created_at ? video.created_at.toISOString().slice(0, 10) : null,
