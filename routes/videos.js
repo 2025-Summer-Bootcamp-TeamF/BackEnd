@@ -1388,47 +1388,43 @@ router.delete('/videos/:video_id/comments', async (req, res) => {
   if (!Array.isArray(comment_ids) || comment_ids.length === 0) {
     return res.status(400).json({ error: '삭제할 댓글 ID가 필요합니다.' });
   }
-
+  if (!youtube_access_token) {
+    return res.status(400).json({ error: 'YouTube access token이 필요합니다.' });
+  }
   let dbDeleted = 0;
   let youtubeDeleted = 0;
   let errors = [];
 
   for (const commentId of comment_ids) {
-    // 1. YouTube API로 숨김(거부) 처리 (토큰이 있는 경우에만)
-    if (youtube_access_token) {
-      try {
-        await axios.post(
-          `https://www.googleapis.com/youtube/v3/comments/setModerationStatus`,
-          null, // POST body 없음
-          {
-            params: {
-              id: commentId,
-              moderationStatus: 'rejected',
-            },
-            headers: {
-              Authorization: `Bearer ${youtube_access_token}`,
-            },
-          }
-        );
-        youtubeDeleted++;
-      } catch (err) {
-        errors.push({ commentId, error: 'YouTube 숨김(거부) 실패', detail: err.response?.data || err.message });
-        // YouTube 실패 시에도 DB 삭제는 진행
-      }
+    // 1. YouTube API로 숨김(거부) 처리
+    try {
+      await axios.post(
+        `https://www.googleapis.com/youtube/v3/comments/setModerationStatus`,
+        null, // POST body 없음
+        {
+          params: {
+            id: commentId,
+            moderationStatus: 'rejected',
+          },
+          headers: {
+            Authorization: `Bearer ${youtube_access_token}`,
+          },
+        }
+      );
+      youtubeDeleted++;
+    } catch (err) {
+      errors.push({ commentId, error: 'YouTube 숨김(거부) 실패', detail: err.response?.data || err.message });
+      continue; // 유튜브 숨김 실패 시 DB도 삭제하지 않음
     }
 
-    // 2. DB에서 hard delete (항상 실행)
+    // 2. DB에서 hard delete
     try {
-      const deleteResult = await pool.query(
+      await pool.query(
         `DELETE FROM "Comment" WHERE video_id = $1 AND youtube_comment_id = $2`,
         [video_id, commentId]
       );
+      dbDeleted++;
       
-      if (deleteResult.rowCount > 0) {
-        dbDeleted++;
-      } else {
-        errors.push({ commentId, error: 'DB 삭제 실패', detail: '해당 댓글을 찾을 수 없음' });
-      }
     } catch (err) {
       errors.push({ commentId, error: 'DB 삭제 실패', detail: err.message });
     }
@@ -1438,8 +1434,7 @@ router.delete('/videos/:video_id/comments', async (req, res) => {
     success: true,
     youtubeDeleted,
     dbDeleted,
-    errors,
-    message: youtube_access_token ? 'YouTube 및 DB에서 삭제 완료' : 'DB에서만 삭제 완료 (YouTube 토큰 없음)'
+    errors
   });
 });
 
