@@ -609,6 +609,39 @@ router.post('/videos/clear-categories', authenticateToken, async (req, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /api/videos/debug-categories:
+ *   get:
+ *     summary: 카테고리 및 비디오 카테고리 테이블 상태 확인 (디버깅용)
+ *     tags: [Videos]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: 카테고리 및 비디오 카테고리 테이블 상태 반환
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 categories:
+ *                   type: integer
+ *                   description: 카테고리 테이블 항목 수
+ *                 videoCategories:
+ *                   type: integer
+ *                   description: 비디오 카테고리 테이블 항목 수
+ *                 categoryDetails:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                 videoCategoryDetails:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *       500:
+ *         description: 디버깅 실패
+ */
 // DB 상태 확인용 API (디버깅용)
 router.get('/videos/debug-categories', authenticateToken, async (req, res) => {
   try {
@@ -1117,6 +1150,77 @@ router.get('/videos/:video_id/comments/summary', async (req, res) => {
   } catch (error) {
     console.error('감정 요약 이력 조회 실패:', error.message);
     res.status(500).json({ error: '감정 요약 이력 조회 실패' });
+  }
+});
+
+/**
+ * @swagger
+ * /api/videos/{video_id}/comments/summary/{summary_id}:
+ *   delete:
+ *     summary: 댓글 분석 요약 삭제
+ *     tags: [Videos]
+ *     parameters:
+ *       - in: path
+ *         name: video_id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: 영상 ID
+ *       - in: path
+ *         name: summary_id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: 분석 요약 ID
+ *     responses:
+ *       200:
+ *         description: 삭제 성공
+ *       404:
+ *         description: 분석 요약을 찾을 수 없음
+ *       500:
+ *         description: 삭제 실패
+ */
+// 댓글 분석 요약 삭제 API
+router.delete('/videos/:video_id/comments/summary/:summary_id', authenticateToken, async (req, res) => {
+  const { video_id, summary_id } = req.params;
+
+  try {
+    // 해당 분석 요약이 존재하는지 확인
+    const checkResult = await pool.query(
+      'SELECT id FROM "Comment_summary" WHERE id = $1 AND video_id = $2',
+      [summary_id, video_id]
+    );
+
+    if (checkResult.rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: '분석 요약을 찾을 수 없습니다.'
+      });
+    }
+
+    // 분석 요약 삭제
+    const deleteResult = await pool.query(
+      'DELETE FROM "Comment_summary" WHERE id = $1 AND video_id = $2',
+      [summary_id, video_id]
+    );
+
+    if (deleteResult.rowCount > 0) {
+      res.status(200).json({
+        success: true,
+        message: '분석 요약이 삭제되었습니다.'
+      });
+    } else {
+      res.status(404).json({
+        success: false,
+        message: '분석 요약을 찾을 수 없습니다.'
+      });
+    }
+  } catch (error) {
+    console.error('분석 요약 삭제 실패:', error.message);
+    res.status(500).json({
+      success: false,
+      message: '분석 요약 삭제 중 오류가 발생했습니다.'
+    });
   }
 });
 
