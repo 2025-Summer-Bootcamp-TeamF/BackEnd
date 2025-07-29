@@ -424,7 +424,7 @@ router.get('/videos', authenticateToken, async (req, res) => {
         video_id: video.id, // YouTube video ID (video.id와 동일)
         title: video.video_name,
         thumbnail: video.video_thumbnail_url,
-        publishedAt: video.created_at ? video.created_at.toISOString().slice(0, 10) : null,
+        upload_date: video.upload_date ? video.upload_date.toISOString().slice(0, 10) : null, // ← 반드시 포함
         viewCount: snapshot?.view_count ?? 0,
         commentRate: snapshot && snapshot.comment_count && snapshot.view_count ? (snapshot.comment_count / snapshot.view_count * 100).toFixed(3) + '%' : '0.000%',
         likeRate: snapshot && snapshot.like_count && snapshot.view_count ? (snapshot.like_count / snapshot.view_count * 100).toFixed(1) + '%' : '0.0%',

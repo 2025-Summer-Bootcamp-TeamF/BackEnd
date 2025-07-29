@@ -30,7 +30,7 @@ const { Job } = require('bullmq');
 async function calculatePositiveRatio(video_id, pool) {
   // comment_type: 1(긍정), 2(부정), 0(중립, 계산 제외)
   const result = await pool.query(
-    'SELECT comment_type FROM "Comment" WHERE video_id = $1 AND is_filtered = false AND (comment_type = 1 OR comment_type = 2)',
+    'SELECT comment_type FROM "Comment" WHERE video_id = $1 AND (comment_type = 1 OR comment_type = 2)',
     [video_id]
   );
   const comments = result.rows;
@@ -770,10 +770,12 @@ router.get('/videos/:video_id/comments/analysis/status/:job_id', async (req, res
 // 긍정적 댓글만 조회하는 API
 router.get('/videos/:video_id/comments/positive', async (req, res) => {
   const { video_id } = req.params;
+  
   try {
     const selectQuery = `
       SELECT * FROM "Comment"
-      WHERE video_id = $1 AND comment_type = 1;
+      WHERE video_id = $1 AND comment_type = 1
+      ORDER BY comment_date DESC;
     `;
     const result = await pool.query(selectQuery, [video_id]);
     res.status(200).json({ success: true, data: result.rows });
@@ -804,10 +806,12 @@ router.get('/videos/:video_id/comments/positive', async (req, res) => {
 // 부정적 댓글만 조회하는 API
 router.get('/videos/:video_id/comments/negative', async (req, res) => {
   const { video_id } = req.params;
+  
   try {
     const selectQuery = `
       SELECT * FROM "Comment"
-      WHERE video_id = $1 AND comment_type = 2;
+      WHERE video_id = $1 AND comment_type = 2
+      ORDER BY comment_date DESC;
     `;
     const result = await pool.query(selectQuery, [video_id]);
     res.status(200).json({ success: true, data: result.rows });
@@ -1384,43 +1388,47 @@ router.delete('/videos/:video_id/comments', async (req, res) => {
   if (!Array.isArray(comment_ids) || comment_ids.length === 0) {
     return res.status(400).json({ error: '삭제할 댓글 ID가 필요합니다.' });
   }
-  if (!youtube_access_token) {
-    return res.status(400).json({ error: 'YouTube access token이 필요합니다.' });
-  }
 
   let dbDeleted = 0;
   let youtubeDeleted = 0;
   let errors = [];
 
   for (const commentId of comment_ids) {
-    // 1. YouTube API로 숨김(거부) 처리
-    try {
-      await axios.post(
-        `https://www.googleapis.com/youtube/v3/comments/setModerationStatus`,
-        null, // POST body 없음
-        {
-          params: {
-            id: commentId,
-            moderationStatus: 'rejected',
-          },
-          headers: {
-            Authorization: `Bearer ${youtube_access_token}`,
-          },
-        }
-      );
-      youtubeDeleted++;
-    } catch (err) {
-      errors.push({ commentId, error: 'YouTube 숨김(거부) 실패', detail: err.response?.data || err.message });
-      continue; // 유튜브 숨김 실패 시 DB도 삭제하지 않음
+    // 1. YouTube API로 숨김(거부) 처리 (토큰이 있는 경우에만)
+    if (youtube_access_token) {
+      try {
+        await axios.post(
+          `https://www.googleapis.com/youtube/v3/comments/setModerationStatus`,
+          null, // POST body 없음
+          {
+            params: {
+              id: commentId,
+              moderationStatus: 'rejected',
+            },
+            headers: {
+              Authorization: `Bearer ${youtube_access_token}`,
+            },
+          }
+        );
+        youtubeDeleted++;
+      } catch (err) {
+        errors.push({ commentId, error: 'YouTube 숨김(거부) 실패', detail: err.response?.data || err.message });
+        // YouTube 실패 시에도 DB 삭제는 진행
+      }
     }
 
-    // 2. DB에서 hard delete
+    // 2. DB에서 hard delete (항상 실행)
     try {
-      await pool.query(
+      const deleteResult = await pool.query(
         `DELETE FROM "Comment" WHERE video_id = $1 AND youtube_comment_id = $2`,
         [video_id, commentId]
       );
-      dbDeleted++;
+      
+      if (deleteResult.rowCount > 0) {
+        dbDeleted++;
+      } else {
+        errors.push({ commentId, error: 'DB 삭제 실패', detail: '해당 댓글을 찾을 수 없음' });
+      }
     } catch (err) {
       errors.push({ commentId, error: 'DB 삭제 실패', detail: err.message });
     }
@@ -1431,6 +1439,7 @@ router.delete('/videos/:video_id/comments', async (req, res) => {
     youtubeDeleted,
     dbDeleted,
     errors,
+    message: youtube_access_token ? 'YouTube 및 DB에서 삭제 완료' : 'DB에서만 삭제 완료 (YouTube 토큰 없음)'
   });
 });
 

@@ -36,12 +36,12 @@ const prisma = new PrismaClient();
 router.get(
   "/google",
   passport.authenticate("google", {
-    scope: [
+  scope: [
       "profile",
       "email",
       "https://www.googleapis.com/auth/youtube",
       "https://www.googleapis.com/auth/youtube.force-ssl",
-    ],
+  ],
     prompt: "consent",
   })
 );
@@ -65,10 +65,10 @@ router.get(
   }),
   (req, res) => {
     try {
-      const { user, token } = req.user;
-
-      // 프론트엔드로 리디렉션 (토큰을 URL 파라미터로 전달)
-      const redirectUrl = `${process.env.FRONTEND_URL}/auth/callback?token=${token}`;
+      const { user, token, youtubeAccessToken } = req.user;
+      
+      // 프론트엔드로 리디렉션 (토큰들을 URL 파라미터로 전달)
+      const redirectUrl = `${process.env.FRONTEND_URL}/auth/callback?token=${token}&youtube_token=${youtubeAccessToken}`;
       res.redirect(redirectUrl);
     } catch (error) {
       res.redirect(`${process.env.FRONTEND_URL}/auth/error`);
@@ -160,11 +160,11 @@ router.post("/logout", async (req, res) => {
       message: "Logged out successfully",
     });
   } catch (error) {
-    res.json({
-      success: true,
+  res.json({
+    success: true,
       message: "Logged out successfully",
-    });
+  });
   }
 });
 
-module.exports = router;
+module.exports = router; 
