@@ -118,12 +118,11 @@ router.post('/videos/:video_id/classify_category', async (req, res) => {
       categoryId = insertCat.rows[0].id;
     }
 
-    // 2. Video_category 테이블에 연결 (중복 방지)
+    // 2. Video_category 테이블에 연결 (ON CONFLICT 제거)
     await pool.query(
-      `INSERT INTO "Video_category" (category_id, video_id)
-       VALUES ($1, $2)
-       ON CONFLICT DO NOTHING`,
-      [categoryId, video_id]
+      `INSERT INTO "Video_category" (category_id, video_id, description)
+       VALUES ($1, $2, $3)`,
+      [categoryId, video_id, cat.desc || null]
     );
   }
 
@@ -719,7 +718,7 @@ router.get('/videos/debug-categories', authenticateToken, async (req, res) => {
  *         description: 분석 결과 저장 및 반환
  *         content:
  *           application/json:
- *             schema:
+ *             schema:  
  *               type: object
  *               properties:
  *                 success:

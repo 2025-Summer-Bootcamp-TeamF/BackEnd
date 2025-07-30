@@ -596,14 +596,11 @@ router.get('/videos/compare', authenticateToken, async (req, res) => {
     });
     
     // 최근 3개 롱폼 영상 + 동적 데이터 (조회수, 좋아요, 싫어요)
-    async function getLatestVideos(channelDbId) {
-      const videos = await prisma.video.findMany({
-        where: { 
-          channel_id: channelDbId,
-          duration: {
-            gte: 120 // 2분(120초) 이상인 동영상만
-          }
-        },
+            async function getLatestVideos(channelDbId) {
+          const videos = await prisma.video.findMany({
+            where: { 
+              channel_id: channelDbId
+            },
         orderBy: { upload_date: 'desc' },
         take: 3
       });
@@ -639,9 +636,6 @@ router.get('/videos/compare', authenticateToken, async (req, res) => {
         const count = await prisma.video.count({
           where: {
             channel_id: channelDbId,
-            duration: {
-              gte: 120 // 2분(120초) 이상인 동영상만
-            },
             upload_date: {
               gte: weekStart,
               lt: weekEnd
