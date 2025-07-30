@@ -21,6 +21,7 @@ model User {
 model Category {
   id             Int              @id @default(autoincrement())
   category       String           @db.VarChar(20)
+  description    String?          @db.Text
   created_at     DateTime         @default(now()) @db.Timestamp(6)
   Video_category Video_category[]
 }

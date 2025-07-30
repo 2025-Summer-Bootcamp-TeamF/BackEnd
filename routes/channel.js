@@ -425,9 +425,14 @@ router.get('/videos', authenticateToken, async (req, res) => {
         title: video.video_name,
         thumbnail: video.video_thumbnail_url,
         upload_date: video.upload_date ? video.upload_date.toISOString().slice(0, 10) : null, // ← 반드시 포함
+        video_link: video.video_link, // 유튜브 링크 추가
         viewCount: snapshot?.view_count ?? 0,
         commentRate: snapshot && snapshot.comment_count && snapshot.view_count ? (snapshot.comment_count / snapshot.view_count * 100).toFixed(3) + '%' : '0.000%',
         likeRate: snapshot && snapshot.like_count && snapshot.view_count ? (snapshot.like_count / snapshot.view_count * 100).toFixed(1) + '%' : '0.0%',
+        commentCount: snapshot?.comment_count ?? 0,
+        likeCount: snapshot?.like_count ?? 0,
+        dislikeCount: snapshot?.dislike_count ?? 0,
+        dislikeRate: snapshot && snapshot.dislike_count && snapshot.view_count ? (snapshot.dislike_count / snapshot.view_count * 100).toFixed(1) + '%' : '0.0%',
       });
     }
     res.json({ success: true, data: result });
