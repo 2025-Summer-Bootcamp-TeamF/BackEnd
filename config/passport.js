@@ -81,7 +81,7 @@ passport.use(new GoogleStrategy({
         email: user.email
       });
 
-      return done(null, { user, token });
+      return done(null, { user, token, youtubeAccessToken: accessToken });
     } catch (error) {
       console.error('YouTube API error:', error.response?.data || error.message);
       return done(error, null);

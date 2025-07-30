@@ -130,7 +130,9 @@ router.get('/my', authenticateToken, async (req, res) => {
         total_videos: snapshot.total_videos,
         total_view: snapshot.total_view,
         channel_created: snapshot.channel_created,
-        nation: snapshot.nation
+        nation: snapshot.nation,
+        daily_view: snapshot.daily_view,
+        average_view: snapshot.average_view
       }
     });
 
@@ -300,7 +302,7 @@ router.get('/avg-views', authenticateToken, async (req, res) => {
  *       500:
  *         description: DB 오류
  */
-// 구독자 변화 추이 반환 (어제 기준으로 주기별 5개의 스냅샷 조회)
+// 구독자 변화 추이 반환 (최근 스냅샷들 조회)
 router.get('/subscriber-change', authenticateToken, async (req, res) => {
   try {
     const userId = req.user.id;
@@ -308,64 +310,34 @@ router.get('/subscriber-change', authenticateToken, async (req, res) => {
       return res.status(401).json({ success: false, message: 'No user id in token' });
     }
     
-    // 주기 파라미터 받기 (기본값 1일)
-    const period = parseInt(req.query.period) || 1;
-    
     // 계정 하나당 채널 한개 가정
     const channel = await prisma.channel.findFirst({ where: { user_id: userId } });
     if (!channel) {
       return res.status(404).json({ success: false, message: 'Channel not found' });
     }
     
-    // 어제 날짜 계산
-    const yesterday = new Date();
-    yesterday.setDate(yesterday.getDate() - 1);
-    yesterday.setHours(0, 0, 0, 0);
-    
-    // 5개의 날짜 계산 (어제부터 주기별로 역순)
-    const targetDates = [];
-    for (let i = 0; i < 5; i++) {
-      const date = new Date(yesterday);
-      date.setDate(date.getDate() - (i * period));
-      targetDates.push(date);
-    }
-    
-    // 각 날짜의 00시 스냅샷 조회
-    const result = [];
-    for (const targetDate of targetDates) {
-      const startOfDay = new Date(targetDate);
-      startOfDay.setHours(0, 0, 0, 0);
-      
-      const endOfDay = new Date(targetDate);
-      endOfDay.setHours(23, 59, 59, 999);
-      
-
-      //일단은 초단위는 무시 나중에 수정 가능
-      const snapshot = await prisma.channel_snapshot.findFirst({
-        where: {
-          channel_id: channel.id,
-          created_at: {
-            gte: startOfDay,
-            lt: new Date(startOfDay.getTime() + 60000) 
-          }
+    // 최근 6개의 스냅샷 조회 (구독자 데이터가 있는 것만)
+    const snapshots = await prisma.channel_snapshot.findMany({
+      where: {
+        channel_id: channel.id,
+        subscriber: {
+          not: null
         }
-      });
-      
-      if (!snapshot) {
-        return res.status(404).json({ 
-          success: false, 
-          message: `No snapshot found for ${targetDate.toISOString().slice(0, 10)} at 00:00` 
-        });
-      }
-      
-      result.push({
-        date: targetDate.toISOString().slice(0, 10),
-        subscriber: snapshot.subscriber
-      });
-    }
+      },
+      orderBy: { created_at: 'desc' },
+      take: 6
+    });
     
-    // 날짜순으로 정렬
+    // 결과 데이터 생성
+    const result = snapshots.map(snapshot => ({
+      date: snapshot.created_at.toISOString().slice(0, 10),
+      subscriber: snapshot.subscriber
+    }));
+    
+    // 날짜순으로 정렬 (오래된 것부터)
     result.sort((a, b) => new Date(a.date) - new Date(b.date));
+    
+    console.log(`[DEBUG] 구독자 변화 데이터 조회: ${result.length}개 스냅샷`);
     
     res.json({ success: true, data: result });
   } catch (error) {
@@ -448,10 +420,11 @@ router.get('/videos', authenticateToken, async (req, res) => {
         orderBy: { created_at: 'desc' }
       });
       result.push({
-        videoId: video.id,
+        videoId: video.id, // 이 값이 실제 YouTube video ID
+        video_id: video.id, // YouTube video ID (video.id와 동일)
         title: video.video_name,
         thumbnail: video.video_thumbnail_url,
-        publishedAt: video.created_at ? video.created_at.toISOString().slice(0, 10) : null,
+        upload_date: video.upload_date ? video.upload_date.toISOString().slice(0, 10) : null, // ← 반드시 포함
         viewCount: snapshot?.view_count ?? 0,
         commentRate: snapshot && snapshot.comment_count && snapshot.view_count ? (snapshot.comment_count / snapshot.view_count * 100).toFixed(3) + '%' : '0.000%',
         likeRate: snapshot && snapshot.like_count && snapshot.view_count ? (snapshot.like_count / snapshot.view_count * 100).toFixed(1) + '%' : '0.0%',
