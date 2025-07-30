@@ -279,6 +279,8 @@ router.get('/videos/thumbnail-categories', authenticateToken, async (req, res) =
   console.log('[DEBUG] AI 분류 API 호출됨, userId:', userId);
   
   try {
+    console.log('[DEBUG] 1. 사용자 인증 확인 완료');
+    console.log('[DEBUG] 2. 채널 정보 조회 시작');
     // 사용자의 채널 정보 가져오기
     const userChannel = await pool.query(
       'SELECT * FROM "Channel" WHERE user_id = $1',
