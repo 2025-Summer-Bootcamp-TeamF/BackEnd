@@ -30,7 +30,7 @@ const { Job } = require('bullmq');
 async function calculatePositiveRatio(video_id, pool) {
   // comment_type: 1(긍정), 2(부정), 0(중립, 계산 제외)
   const result = await pool.query(
-    'SELECT comment_type FROM "Comment" WHERE video_id = $1 AND is_filtered = false AND (comment_type = 1 OR comment_type = 2)',
+    'SELECT comment_type FROM "Comment" WHERE video_id = $1 AND (comment_type = 1 OR comment_type = 2)',
     [video_id]
   );
   const comments = result.rows;
@@ -609,6 +609,39 @@ router.post('/videos/clear-categories', authenticateToken, async (req, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /api/videos/debug-categories:
+ *   get:
+ *     summary: 카테고리 및 비디오 카테고리 테이블 상태 확인 (디버깅용)
+ *     tags: [Videos]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: 카테고리 및 비디오 카테고리 테이블 상태 반환
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 categories:
+ *                   type: integer
+ *                   description: 카테고리 테이블 항목 수
+ *                 videoCategories:
+ *                   type: integer
+ *                   description: 비디오 카테고리 테이블 항목 수
+ *                 categoryDetails:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                 videoCategoryDetails:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *       500:
+ *         description: 디버깅 실패
+ */
 // DB 상태 확인용 API (디버깅용)
 router.get('/videos/debug-categories', authenticateToken, async (req, res) => {
   try {
@@ -770,10 +803,12 @@ router.get('/videos/:video_id/comments/analysis/status/:job_id', async (req, res
 // 긍정적 댓글만 조회하는 API
 router.get('/videos/:video_id/comments/positive', async (req, res) => {
   const { video_id } = req.params;
+  
   try {
     const selectQuery = `
       SELECT * FROM "Comment"
-      WHERE video_id = $1 AND comment_type = 1;
+      WHERE video_id = $1 AND comment_type = 1
+      ORDER BY comment_date DESC;
     `;
     const result = await pool.query(selectQuery, [video_id]);
     res.status(200).json({ success: true, data: result.rows });
@@ -804,10 +839,12 @@ router.get('/videos/:video_id/comments/positive', async (req, res) => {
 // 부정적 댓글만 조회하는 API
 router.get('/videos/:video_id/comments/negative', async (req, res) => {
   const { video_id } = req.params;
+  
   try {
     const selectQuery = `
       SELECT * FROM "Comment"
-      WHERE video_id = $1 AND comment_type = 2;
+      WHERE video_id = $1 AND comment_type = 2
+      ORDER BY comment_date DESC;
     `;
     const result = await pool.query(selectQuery, [video_id]);
     res.status(200).json({ success: true, data: result.rows });
@@ -1118,6 +1155,77 @@ router.get('/videos/:video_id/comments/summary', async (req, res) => {
 
 /**
  * @swagger
+ * /api/videos/{video_id}/comments/summary/{summary_id}:
+ *   delete:
+ *     summary: 댓글 분석 요약 삭제
+ *     tags: [Videos]
+ *     parameters:
+ *       - in: path
+ *         name: video_id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: 영상 ID
+ *       - in: path
+ *         name: summary_id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: 분석 요약 ID
+ *     responses:
+ *       200:
+ *         description: 삭제 성공
+ *       404:
+ *         description: 분석 요약을 찾을 수 없음
+ *       500:
+ *         description: 삭제 실패
+ */
+// 댓글 분석 요약 삭제 API
+router.delete('/videos/:video_id/comments/summary/:summary_id', authenticateToken, async (req, res) => {
+  const { video_id, summary_id } = req.params;
+
+  try {
+    // 해당 분석 요약이 존재하는지 확인
+    const checkResult = await pool.query(
+      'SELECT id FROM "Comment_summary" WHERE id = $1 AND video_id = $2',
+      [summary_id, video_id]
+    );
+
+    if (checkResult.rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: '분석 요약을 찾을 수 없습니다.'
+      });
+    }
+
+    // 분석 요약 삭제
+    const deleteResult = await pool.query(
+      'DELETE FROM "Comment_summary" WHERE id = $1 AND video_id = $2',
+      [summary_id, video_id]
+    );
+
+    if (deleteResult.rowCount > 0) {
+      res.status(200).json({
+        success: true,
+        message: '분석 요약이 삭제되었습니다.'
+      });
+    } else {
+      res.status(404).json({
+        success: false,
+        message: '분석 요약을 찾을 수 없습니다.'
+      });
+    }
+  } catch (error) {
+    console.error('분석 요약 삭제 실패:', error.message);
+    res.status(500).json({
+      success: false,
+      message: '분석 요약 삭제 중 오류가 발생했습니다.'
+    });
+  }
+});
+
+/**
+ * @swagger
  * /api/videos/{video_id}/comments/classify:
  *   post:
  *     summary: 유튜브 댓글 분류 및 저장 (n8n 연동)
@@ -1387,7 +1495,6 @@ router.delete('/videos/:video_id/comments', async (req, res) => {
   if (!youtube_access_token) {
     return res.status(400).json({ error: 'YouTube access token이 필요합니다.' });
   }
-
   let dbDeleted = 0;
   let youtubeDeleted = 0;
   let errors = [];
@@ -1421,6 +1528,7 @@ router.delete('/videos/:video_id/comments', async (req, res) => {
         [video_id, commentId]
       );
       dbDeleted++;
+      
     } catch (err) {
       errors.push({ commentId, error: 'DB 삭제 실패', detail: err.message });
     }
@@ -1430,7 +1538,7 @@ router.delete('/videos/:video_id/comments', async (req, res) => {
     success: true,
     youtubeDeleted,
     dbDeleted,
-    errors,
+    errors
   });
 });
 

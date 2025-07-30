@@ -1,5 +1,5 @@
 # Node.js 18 이미지 사용
-FROM node:18
+FROM node:18-alpine
 
 # 컨테이너 작업 디렉토리 설정
 WORKDIR /app
@@ -19,4 +19,4 @@ RUN npx prisma generate
 EXPOSE 3000
 
 # 개발 서버 시작
-CMD ["npm", "run", "dev"]
+CMD ["npm", "start"]
