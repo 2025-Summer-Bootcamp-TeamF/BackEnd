@@ -17,6 +17,7 @@
 
 const express = require('express');
 const axios = require('axios');
+const { OpenAI } = require('openai');
 const pool = require('../db');
 const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
@@ -184,8 +185,6 @@ async function calculatePositiveRatio(video_id, pool) {
 }
 
 // 영상 썸네일 카테고리 분류 API (라우트 순서 문제 해결을 위해 상단으로 이동)
-const { OpenAI } = require("openai");
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 router.post('/videos/:video_id/classify_category', async (req, res) => {
   const { video_id } = req.params;
