@@ -9,3 +9,5 @@ n8n-workflows/
 pgdata/
 *.sql
 !prisma/migrations/**/*.sql
+
+/grafana/data/grafana.db
