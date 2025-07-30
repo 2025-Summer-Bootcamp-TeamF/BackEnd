@@ -65,6 +65,7 @@ model Video {
   created_at            DateTime          @default(now()) @db.Timestamp(6)
   updated_at            DateTime          @default(now()) @db.Timestamp(6)
   comment_classified_at DateTime?         @default(dbgenerated("'2000-01-01 00:00:00'::timestamp without time zone")) @db.Timestamp(6)
+  filtering_keyword     String?           @db.VarChar(255)
   Comment               Comment[]
   Comment_summary       Comment_summary[]
   Channel               Channel           @relation(fields: [channel_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
