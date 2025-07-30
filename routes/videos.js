@@ -1839,6 +1839,7 @@ router.put('/videos/:video_id/comments', async (req, res) => {
 
 // 내 채널의 조회수 순위 1,2,3등 영상 조회 API
 router.get('/videos/top-views', authenticateToken, async (req, res) => {
+  console.log('[DEBUG] /api/videos/top-views 요청 받음');
   try {
     const userId = req.user.id;
     
@@ -1896,6 +1897,149 @@ router.get('/videos/top-views', authenticateToken, async (req, res) => {
       success: false, 
       message: '상위 조회수 영상 조회 중 오류가 발생했습니다.',
       error: error.message 
+    });
+  }
+});
+
+/**
+ * @swagger
+ * /api/videos/{video_id}:
+ *   get:
+ *     summary: 특정 비디오 상세 정보 조회
+ *     description: 비디오 ID로 특정 비디오의 상세 정보를 조회합니다. filtering_keyword를 포함합니다.
+ *     tags: [Videos]
+ *     parameters:
+ *       - in: path
+ *         name: video_id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: 비디오 ID
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: 비디오 정보 조회 성공
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     id:
+ *                       type: string
+ *                       example: "tpUxKppsShg"
+ *                     video_name:
+ *                       type: string
+ *                       example: "샘플 비디오 제목"
+ *                     video_thumbnail_url:
+ *                       type: string
+ *                       example: "https://i.ytimg.com/vi/tpUxKppsShg/default.jpg"
+ *                     upload_date:
+ *                       type: string
+ *                       format: date-time
+ *                       example: "2024-01-01T00:00:00.000Z"
+ *                     channel_id:
+ *                       type: string
+ *                       example: "UC123456789"
+ *                     filtering_keyword:
+ *                       type: string
+ *                       nullable: true
+ *                       example: "노래가 좋다는 댓글"
+ *                     comment_classified_at:
+ *                       type: string
+ *                       format: date-time
+ *                       nullable: true
+ *                       example: "2024-01-01T00:00:00.000Z"
+ *                     created_at:
+ *                       type: string
+ *                       format: date-time
+ *                       example: "2024-01-01T00:00:00.000Z"
+ *                     updated_at:
+ *                       type: string
+ *                       format: date-time
+ *                       example: "2024-01-01T00:00:00.000Z"
+ *       404:
+ *         description: 비디오를 찾을 수 없음
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: false
+ *                 message:
+ *                   type: string
+ *                   example: "비디오를 찾을 수 없습니다."
+ *       500:
+ *         description: 서버 오류
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: false
+ *                 message:
+ *                   type: string
+ *                 error:
+ *                   type: string
+ */
+// 특정 비디오 상세 정보 조회 API
+router.get('/videos/:video_id', authenticateToken, async (req, res) => {
+  const { video_id } = req.params;
+  const userId = req.user.id;
+
+  try {
+    // 비디오 정보 조회 (채널 소유자 확인 포함)
+    const videoQuery = `
+      SELECT v.*, c.user_id
+      FROM "Video" v
+      JOIN "Channel" c ON v.channel_id = c.id
+      WHERE v.id = $1 AND c.user_id = $2 AND v.is_deleted = false
+    `;
+    
+    const result = await pool.query(videoQuery, [video_id, userId]);
+    
+    if (result.rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: '비디오를 찾을 수 없습니다.'
+      });
+    }
+
+    const video = result.rows[0];
+    
+    // 응답 데이터 구성 (민감한 정보 제외)
+    const videoData = {
+      id: video.id,
+      video_name: video.video_name,
+      video_thumbnail_url: video.video_thumbnail_url,
+      upload_date: video.upload_date,
+      channel_id: video.channel_id,
+      filtering_keyword: video.filtering_keyword,
+      comment_classified_at: video.comment_classified_at,
+      created_at: video.created_at,
+      updated_at: video.updated_at
+    };
+
+    res.status(200).json({
+      success: true,
+      data: videoData
+    });
+  } catch (error) {
+    console.error('비디오 정보 조회 실패:', error.message);
+    res.status(500).json({
+      success: false,
+      message: '비디오 정보 조회 중 오류가 발생했습니다.',
+      error: error.message
     });
   }
 });
