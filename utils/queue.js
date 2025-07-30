@@ -194,14 +194,19 @@ const n8nWorker = new Worker(
 
       if (jobType === "filter") {
         const { video_id, filtering_keyword } = data;
+        
+        console.log(`[FILTER] 필터링 작업 시작 - video_id: ${video_id}, keyword: ${filtering_keyword}`);
 
         // 1. Comment 테이블의 is_filtered를 모두 false로 초기화
+        console.log(`[FILTER] 1단계: 기존 필터링 상태 초기화`);
         await pool.query(
           'UPDATE "Comment" SET is_filtered = false WHERE video_id = $1',
           [video_id]
         );
+        console.log(`[FILTER] 1단계 완료: 모든 댓글의 is_filtered를 false로 설정`);
 
         // 2. n8n에 필터링 요청
+        console.log(`[FILTER] 2단계: n8n에 필터링 요청 전송`);
         const n8nRes = await axios.post(
           "http://n8n:5678/webhook/comments-filtering",
           {
@@ -209,16 +214,22 @@ const n8nWorker = new Worker(
             filtering_keyword,
           }
         );
+        console.log(`[FILTER] 2단계 완료: n8n 응답 수신`);
 
         // 3. n8n 응답 파싱
+        console.log(`[FILTER] 3단계: n8n 응답 파싱`);
         let output = n8nRes.data.output;
         if (output === undefined) {
           output = n8nRes.data;
         }
+        console.log(`[FILTER] 3단계 완료: 파싱된 댓글 수 - ${output.comments ? output.comments.length : output.length}개`);
 
         const filteredComments = output.comments || output;
         const results = [];
+        let updatedCount = 0;
+        let insertedCount = 0;
 
+        console.log(`[FILTER] 4단계: 댓글 필터링 처리 시작`);
         for (const c of filteredComments) {
           // c: { id, text, is_filtered }
 
@@ -235,6 +246,8 @@ const n8nWorker = new Worker(
               'UPDATE "Comment" SET is_filtered = $1 WHERE youtube_comment_id = $2 AND video_id = $3',
               [isFiltered, c.id, video_id]
             );
+            updatedCount++;
+            console.log(`[FILTER] 기존 댓글 업데이트 - ID: ${c.id}, is_filtered: ${isFiltered}`);
           } else {
             // 새 댓글: YouTube API로 메타데이터 조회 후 insert
             const url = `https://www.googleapis.com/youtube/v3/comments?id=${c.id}&part=snippet&key=${process.env.GOOGLE_API_KEY}`;
@@ -242,6 +255,7 @@ const n8nWorker = new Worker(
               const ytRes = await axios.get(url);
               const item = ytRes.data.items[0]?.snippet;
               if (!item) {
+                console.log(`[FILTER] YouTube API에서 댓글 정보 없음 - ID: ${c.id}`);
                 continue;
               }
 
@@ -266,13 +280,31 @@ const n8nWorker = new Worker(
               const result = await pool.query(insertQuery, values);
               if (result.rows[0]) {
                 results.push(result.rows[0]);
+                insertedCount++;
+                console.log(`[FILTER] 새 댓글 삽입 - ID: ${c.id}, author: ${item.authorDisplayName}`);
               }
             } catch (err) {
+              console.log(`[FILTER] YouTube API 에러 - ID: ${c.id}, error: ${err.message}`);
               // YouTube API 에러 무시
             }
           }
         }
 
+        console.log(`[FILTER] 4단계 완료: 업데이트 ${updatedCount}개, 삽입 ${insertedCount}개`);
+
+        // 5. Video 테이블에 filtering_keyword 저장
+        console.log(`[FILTER] 5단계: Video 테이블에 필터링 키워드 저장`);
+        try {
+          await pool.query(
+            'UPDATE "Video" SET filtering_keyword = $1 WHERE id = $2',
+            [filtering_keyword, video_id]
+          );
+          console.log(`[FILTER] 5단계 완료: filtering_keyword "${filtering_keyword}" 저장됨`);
+        } catch (err) {
+          console.error(`[FILTER] 5단계 실패: Video 테이블 업데이트 에러 - ${err.message}`);
+        }
+
+        console.log(`[FILTER] 필터링 작업 완료 - 총 처리된 댓글: ${results.length}개`);
         return { status: "completed", videoId, jobType, data: results };
       }
 
