@@ -1669,9 +1669,93 @@ router.post('/videos/:video_id/comments/filter', async (req, res) => {
 
 /**
  * @swagger
+ * /api/videos/{video_id}/comments:
+ *   get:
+ *     summary: 모든 댓글 조회
+ *     description: 특정 비디오의 모든 댓글을 조회합니다.
+ *     tags: [Comments]
+ *     parameters:
+ *       - in: path
+ *         name: video_id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: 비디오 ID
+ *     responses:
+ *       200:
+ *         description: 댓글 조회 성공
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 data:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       youtube_comment_id:
+ *                         type: string
+ *                       author_name:
+ *                         type: string
+ *                       comment:
+ *                         type: string
+ *                       comment_type:
+ *                         type: integer
+ *                       comment_date:
+ *                         type: string
+ *                         format: date-time
+ *                       is_filtered:
+ *                         type: boolean
+ *       500:
+ *         description: 서버 오류
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: false
+ *                 message:
+ *                   type: string
+ *                 error:
+ *                   type: string
+ */
+// 모든 댓글 조회 API 입니다.
+router.get('/videos/:video_id/comments', async (req, res) => {
+  const { video_id } = req.params;
+
+  try {
+    const result = await pool.query(
+      'SELECT * FROM "Comment" WHERE video_id = $1 ORDER BY comment_date DESC',
+      [video_id]
+    );
+
+    res.status(200).json({
+      success: true,
+      data: result.rows
+    });
+  } catch (error) {
+    console.error('댓글 조회 실패:', error.message);
+    res.status(500).json({ 
+      success: false, 
+      message: '댓글 조회 실패',
+      error: error.message 
+    });
+  }
+});
+
+
+/**
+ * @swagger
+
  * /api/videos/{video_id}/comments/filter/status/{job_id}:
  *   get:
- *     summary: 댓글 필터링 작업 상태 확인
+ *     summary: 댓글 필터링 작업 상태 확인!
  *     tags: [Videos]
  *     parameters:
  *       - in: path
