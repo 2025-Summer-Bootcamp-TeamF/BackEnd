@@ -1,5 +1,6 @@
 const swaggerUi = require('swagger-ui-express');
 const swaggerSpecs = require('./swagger');
+const swaggerJsdoc = require('swagger-jsdoc');
 
 const express = require('express');
 const cors = require('cors');
@@ -11,7 +12,22 @@ const { n8nWorker } = require('./utils/queue');
 
 const client = require('prom-client');
 const collectDefaultMetrics = client.collectDefaultMetrics;
+const register = client.register;
 collectDefaultMetrics();
+
+// custom metrics 추가
+const httpRequestDurationMicroseconds = new client.Histogram({
+  name: 'http_request_duration_ms',
+  help: 'Duration of HTTP requests in ms',
+  labelNames: ['method', 'route', 'code'],
+  buckets: [50, 100, 300, 500, 1000, 2000] // milliseconds
+});
+
+const requestCount = new client.Counter({
+  name: 'http_requests_total',
+  help: 'Total number of HTTP requests',
+  labelNames: ['method', 'route', 'code'],
+});
 
 
 // Passport 설정
@@ -99,18 +115,14 @@ const swaggerOptions = {
   apis: ['./routes/*.js'], // Path to the API docs
 };
 
-const swaggerSpecs = swaggerJsdoc(swaggerOptions);
-app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpecs));
+const swaggerSpecss = swaggerJsdoc(swaggerOptions);
+app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpecss));
 
 // 기본 라우터
 app.get('/', (req, res) => {
   res.send('Backend server is running!');
 });
 
-app.get('/metrics', (req, res) => {
-  res.set('Content-Type', client.register.contentType);
-  res.end(client.register.metrics());
-});
 // Prometheus 메트릭 엔드포인트
 app.get('/metrics', async (req, res) => {
   res.set('Content-Type', register.contentType);

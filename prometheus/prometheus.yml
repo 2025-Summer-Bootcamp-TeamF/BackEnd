@@ -19,6 +19,6 @@ scrape_configs:
     static_configs:
       - targets: ['prometheus:9090'] # Grafana가 데이터 읽어올 수 있게 localhost x
 
-  - job_name: 'express-app'
+  - job_name: 'nginx'
     static_configs:
-      - targets: ['express:3001']
+      - targets: ['nginx-exporter:9113']
