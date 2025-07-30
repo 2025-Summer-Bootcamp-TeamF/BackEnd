@@ -26,149 +26,6 @@ const { saveVideoSnapshot } = require('../utils/videoSnapshot');
 const { n8nQueue } = require('../utils/queue');
 const { Job } = require('bullmq');
 
-/**
- * @swagger
- * /api/videos/{video_id}:
- *   get:
- *     summary: 특정 비디오 상세 정보 조회
- *     description: 비디오 ID로 특정 비디오의 상세 정보를 조회합니다. filtering_keyword를 포함합니다.
- *     tags: [Videos]
- *     parameters:
- *       - in: path
- *         name: video_id
- *         required: true
- *         schema:
- *           type: string
- *         description: 비디오 ID
- *     security:
- *       - bearerAuth: []
- *     responses:
- *       200:
- *         description: 비디오 정보 조회 성공
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 success:
- *                   type: boolean
- *                   example: true
- *                 data:
- *                   type: object
- *                   properties:
- *                     id:
- *                       type: string
- *                       example: "tpUxKppsShg"
- *                     video_name:
- *                       type: string
- *                       example: "샘플 비디오 제목"
- *                     video_thumbnail_url:
- *                       type: string
- *                       example: "https://i.ytimg.com/vi/tpUxKppsShg/default.jpg"
- *                     upload_date:
- *                       type: string
- *                       format: date-time
- *                       example: "2024-01-01T00:00:00.000Z"
- *                     channel_id:
- *                       type: string
- *                       example: "UC123456789"
- *                     filtering_keyword:
- *                       type: string
- *                       nullable: true
- *                       example: "노래가 좋다는 댓글"
- *                     comment_classified_at:
- *                       type: string
- *                       format: date-time
- *                       nullable: true
- *                       example: "2024-01-01T00:00:00.000Z"
- *                     created_at:
- *                       type: string
- *                       format: date-time
- *                       example: "2024-01-01T00:00:00.000Z"
- *                     updated_at:
- *                       type: string
- *                       format: date-time
- *                       example: "2024-01-01T00:00:00.000Z"
- *       404:
- *         description: 비디오를 찾을 수 없음
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 success:
- *                   type: boolean
- *                   example: false
- *                 message:
- *                   type: string
- *                   example: "비디오를 찾을 수 없습니다."
- *       500:
- *         description: 서버 오류
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 success:
- *                   type: boolean
- *                   example: false
- *                 message:
- *                   type: string
- *                 error:
- *                   type: string
- */
-// 특정 비디오 상세 정보 조회 API
-router.get('/videos/:video_id', authenticateToken, async (req, res) => {
-  const { video_id } = req.params;
-  const userId = req.user.id;
-
-  try {
-    // 비디오 정보 조회 (채널 소유자 확인 포함)
-    const videoQuery = `
-      SELECT v.*, c.user_id
-      FROM "Video" v
-      JOIN "Channel" c ON v.channel_id = c.id
-      WHERE v.id = $1 AND c.user_id = $2 AND v.is_deleted = false
-    `;
-    
-    const result = await pool.query(videoQuery, [video_id, userId]);
-    
-    if (result.rows.length === 0) {
-      return res.status(404).json({
-        success: false,
-        message: '비디오를 찾을 수 없습니다.'
-      });
-    }
-
-    const video = result.rows[0];
-    
-    // 응답 데이터 구성 (민감한 정보 제외)
-    const videoData = {
-      id: video.id,
-      video_name: video.video_name,
-      video_thumbnail_url: video.video_thumbnail_url,
-      upload_date: video.upload_date,
-      channel_id: video.channel_id,
-      filtering_keyword: video.filtering_keyword,
-      comment_classified_at: video.comment_classified_at,
-      created_at: video.created_at,
-      updated_at: video.updated_at
-    };
-
-    res.status(200).json({
-      success: true,
-      data: videoData
-    });
-  } catch (error) {
-    console.error('비디오 정보 조회 실패:', error.message);
-    res.status(500).json({
-      success: false,
-      message: '비디오 정보 조회 중 오류가 발생했습니다.',
-      error: error.message
-    });
-  }
-});
-
 // 댓글 긍정 비율 계산 함수
 async function calculatePositiveRatio(video_id, pool) {
   // comment_type: 1(긍정), 2(부정), 0(중립, 계산 제외)
@@ -299,7 +156,7 @@ router.get('/videos/thumbnail-categories', authenticateToken, async (req, res) =
     const channel = userChannel.rows[0];
     console.log('[DEBUG] 채널 ID:', channel.id);
 
-    // 기존 카테고리 분류 결과가 있는지 확인
+    // 기존 카테고리 분류 결과가 있는지 확인 (해당 채널의 영상들만)
     const existingCategories = await prisma.video_category.findMany({
       where: {
         Video: {
@@ -312,8 +169,20 @@ router.get('/videos/thumbnail-categories', authenticateToken, async (req, res) =
       }
     });
 
+    console.log('[DEBUG] 기존 분류 결과 확인:', existingCategories.length, '개');
+    console.log('[DEBUG] 채널 ID:', channel.id);
+    if (existingCategories.length > 0) {
+      console.log('[DEBUG] 기존 카테고리 샘플:', existingCategories.slice(0, 3).map(ec => ({
+        categoryName: ec.Category.category,
+        videoId: ec.Video.id,
+        videoTitle: ec.Video.video_name,
+        channelId: ec.Video.channel_id
+      })));
+    }
+
     // 기존 분류 결과가 있으면 DB에서 가져오기
     if (existingCategories.length > 0) {
+      console.log('[DEBUG] 기존 분류 결과 사용 - AI 분류 건너뛰기');
       console.log('[DEBUG] 기존 카테고리 분류 결과 사용');
       
       // 카테고리별로 그룹화 (중복 제거)
@@ -330,9 +199,10 @@ router.get('/videos/thumbnail-categories', authenticateToken, async (req, res) =
         }
         
         if (!categoryGroups[categoryName]) {
+          // DB에 저장된 AI 설명글 사용
           categoryGroups[categoryName] = {
             name: categoryName,
-            description: `이 카테고리는 ${categoryName} 특성을 가진 영상들을 모아놓은 공간입니다. 해당 영상들의 썸네일과 제목에서 ${categoryName}의 특징을 보여주며, 시청자들이 이러한 유형의 콘텐츠를 선호하는 경향을 분석할 수 있습니다.`,
+            description: vc.Category.description || `이 카테고리는 ${categoryName} 특성을 가진 영상들을 모아놓은 공간입니다.`,
             videos: [],
             videoCount: 0,
             averageViews: 0,
@@ -402,8 +272,8 @@ router.get('/videos/thumbnail-categories', authenticateToken, async (req, res) =
     }
 
     // 기존 분류 결과가 없으면 AI 분류 실행
-    console.log('[DEBUG] 새로운 카테고리 분류 실행');
-    
+    console.log('[DEBUG] 새로운 카테고리 분류 실행 - 기존 결과 없음');
+
     // 사용자 채널의 모든 영상 가져오기
     const videos = await pool.query(`
       SELECT v.*, 
@@ -461,16 +331,18 @@ ${JSON.stringify(videoData, null, 2)}
 - 예시: "밝은 색상 게임", "자연 풍경 음악", "클로즈업 촬영", "어두운 테마 음악" 등
 
 **설명글 작성 가이드:**
-- 각 카테고리마다 다른 형식과 스타일로 설명글을 작성하세요
-- 설명글 형식을 다양하게 사용하세요:
-  * 형식 1: "~한 특징을 보이는 영상들로 구성되어 있으며, ~한 요소가 돋보입니다"
-  * 형식 2: "주로 ~한 스타일의 썸네일을 사용하며, ~한 주제의 콘텐츠가 많습니다"
-  * 형식 3: "~한 분위기와 ~한 색상이 특징이며, ~한 키워드가 자주 등장합니다"
-  * 형식 4: "~한 구도와 ~한 배경을 활용한 영상들이 주를 이루며, ~한 테마가 공통점입니다"
-  * 형식 5: "~한 시각적 요소와 ~한 콘텐츠 유형이 결합된 형태로, ~한 특징이 두드러집니다"
-- 실제 영상들의 썸네일과 제목을 구체적으로 분석하여 각 카테고리의 고유한 특징을 강조하세요
-- 색상, 구도, 배경, 주제, 스타일 등 다양한 관점에서 분석하되, 각 카테고리마다 다른 측면을 중심으로 설명하세요
-- 반복적인 문구나 형식을 피하고, 각 카테고리의 고유한 매력을 부각시키는 설명을 작성하세요
+- 각 카테고리의 실제 영상들을 분석하여 고유한 특징을 발견하고, 이를 바탕으로 자연스럽고 구체적인 설명을 작성하세요
+- 설명글은 다음과 같은 다양한 스타일로 작성하세요:
+  * "이 영상들은 ~한 시각적 특징을 공유하며, ~한 주제나 분위기가 두드러집니다"
+  * "주로 ~한 색상 팔레트와 ~한 구도를 사용하는 영상들로 구성되어 있습니다"
+  * "~한 스타일의 썸네일이 특징이며, ~한 콘텐츠 유형이 주를 이룹니다"
+  * "~한 배경과 ~한 요소들이 자주 등장하며, ~한 분위기를 연출합니다"
+  * "~한 시각적 요소와 ~한 주제가 결합된 형태로, ~한 매력이 돋보입니다"
+- 실제 영상들의 썸네일에서 관찰되는 구체적인 특징(색상, 구도, 배경, 주제, 스타일 등)을 분석하여 각 카테고리의 고유한 매력을 부각시키세요
+- 각 카테고리마다 다른 관점에서 분석하여 다양성 있는 설명을 작성하세요
+- 형식적인 문구나 반복적인 표현을 피하고, 각 카테고리의 실제 특징을 정확히 반영한 자연스러운 설명을 작성하세요
+- 설명글은 60-100자 정도로 구체적이고 상세해야 합니다
+- 실제 영상 제목들을 참고하여 해당 카테고리의 콘텐츠 특성을 정확히 파악하고 반영하세요
 
 다음 JSON 형식으로 응답해주세요:
 {
@@ -597,6 +469,9 @@ ${JSON.stringify(videoData, null, 2)}
           return aiVideo; // DB에 없는 경우 AI 결과 사용
         });
         
+        // AI가 생성한 원본 설명글 그대로 사용
+        console.log('[DEBUG] AI 생성 설명글:', group.description);
+        
         group.videoCount = group.videos.length;
         
         // 평균 조회수 계산
@@ -620,30 +495,49 @@ ${JSON.stringify(videoData, null, 2)}
       // AI 분류 결과를 DB에 저장
       try {
         console.log('[DEBUG] 카테고리 분류 결과를 DB에 저장 중...');
+        console.log('[DEBUG] 저장할 카테고리 개수:', categories.length);
         
         // 기존 분류 결과 삭제 (중복 방지)
         const videoIds = videos.rows.map(v => v.id);
-        await prisma.video_category.deleteMany({
+        console.log('[DEBUG] 삭제할 영상 ID들:', videoIds);
+        
+        const deletedVideoCategories = await prisma.video_category.deleteMany({
           where: {
             video_id: {
               in: videoIds
             }
           }
         });
+        console.log('[DEBUG] 삭제된 Video_category 개수:', deletedVideoCategories.count);
         
         for (const category of categories) {
+          console.log('[DEBUG] 카테고리 저장 중:', category.name);
+          
           // 카테고리 생성 또는 찾기
           let dbCategory = await prisma.category.findFirst({
             where: { category: category.name }
           });
           
           if (!dbCategory) {
+            console.log('[DEBUG] 새 카테고리 생성:', category.name);
             dbCategory = await prisma.category.create({
-              data: { category: category.name }
+              data: { 
+                category: category.name,
+                description: category.description
+              }
+            });
+            console.log('[DEBUG] 생성된 카테고리 ID:', dbCategory.id);
+          } else {
+            console.log('[DEBUG] 기존 카테고리 업데이트:', category.name);
+            // 기존 카테고리의 설명글 업데이트
+            await prisma.category.update({
+              where: { id: dbCategory.id },
+              data: { description: category.description }
             });
           }
           
           // 영상들을 해당 카테고리에 연결 (중복 방지)
+          console.log('[DEBUG] 영상 연결 중, 영상 개수:', category.videos.length);
           for (const video of category.videos) {
             // 이미 존재하는지 확인
             const existing = await prisma.video_category.findFirst({
@@ -654,12 +548,15 @@ ${JSON.stringify(videoData, null, 2)}
             });
             
             if (!existing) {
+              console.log('[DEBUG] Video_category 생성:', video.id, '->', dbCategory.id);
               await prisma.video_category.create({
                 data: {
                   category_id: dbCategory.id,
                   video_id: video.id
                 }
               });
+            } else {
+              console.log('[DEBUG] Video_category 이미 존재:', video.id, '->', dbCategory.id);
             }
           }
         }
@@ -667,6 +564,7 @@ ${JSON.stringify(videoData, null, 2)}
         console.log('[DEBUG] 카테고리 분류 결과 DB 저장 완료');
       } catch (dbError) {
         console.error('[DEBUG] DB 저장 실패:', dbError);
+        console.error('[DEBUG] DB 저장 실패 상세:', dbError.message);
         // DB 저장 실패해도 결과는 반환
       }
 
@@ -1768,89 +1666,6 @@ router.post('/videos/:video_id/comments/filter', async (req, res) => {
     });
   }
 });
-
-/**
- * @swagger
- * /api/videos/{video_id}/comments:
- *   get:
- *     summary: 모든 댓글 조회
- *     description: 특정 비디오의 모든 댓글을 조회합니다.
- *     tags: [Comments]
- *     parameters:
- *       - in: path
- *         name: video_id
- *         required: true
- *         schema:
- *           type: string
- *         description: 비디오 ID
- *     responses:
- *       200:
- *         description: 댓글 조회 성공
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 success:
- *                   type: boolean
- *                   example: true
- *                 data:
- *                   type: array
- *                   items:
- *                     type: object
- *                     properties:
- *                       youtube_comment_id:
- *                         type: string
- *                       author_name:
- *                         type: string
- *                       comment:
- *                         type: string
- *                       comment_type:
- *                         type: integer
- *                       comment_date:
- *                         type: string
- *                         format: date-time
- *                       is_filtered:
- *                         type: boolean
- *       500:
- *         description: 서버 오류
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 success:
- *                   type: boolean
- *                   example: false
- *                 message:
- *                   type: string
- *                 error:
- *                   type: string
- */
-// 모든 댓글 조회 API
-router.get('/videos/:video_id/comments', async (req, res) => {
-  const { video_id } = req.params;
-
-  try {
-    const result = await pool.query(
-      'SELECT * FROM "Comment" WHERE video_id = $1 ORDER BY comment_date DESC',
-      [video_id]
-    );
-
-    res.status(200).json({
-      success: true,
-      data: result.rows
-    });
-  } catch (error) {
-    console.error('댓글 조회 실패:', error.message);
-    res.status(500).json({ 
-      success: false, 
-      message: '댓글 조회 실패',
-      error: error.message 
-    });
-  }
-});
-
 
 /**
  * @swagger
