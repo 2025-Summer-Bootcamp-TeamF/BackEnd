@@ -17,7 +17,6 @@
 
 const express = require('express');
 const axios = require('axios');
-const { OpenAI } = require('openai');
 const pool = require('../db');
 const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
@@ -26,149 +25,6 @@ const { authenticateToken } = require('../middleware/auth');
 const { saveVideoSnapshot } = require('../utils/videoSnapshot');
 const { n8nQueue } = require('../utils/queue');
 const { Job } = require('bullmq');
-
-/**
- * @swagger
- * /api/videos/{video_id}:
- *   get:
- *     summary: 특정 비디오 상세 정보 조회
- *     description: 비디오 ID로 특정 비디오의 상세 정보를 조회합니다. filtering_keyword를 포함합니다.
- *     tags: [Videos]
- *     parameters:
- *       - in: path
- *         name: video_id
- *         required: true
- *         schema:
- *           type: string
- *         description: 비디오 ID
- *     security:
- *       - bearerAuth: []
- *     responses:
- *       200:
- *         description: 비디오 정보 조회 성공
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 success:
- *                   type: boolean
- *                   example: true
- *                 data:
- *                   type: object
- *                   properties:
- *                     id:
- *                       type: string
- *                       example: "tpUxKppsShg"
- *                     video_name:
- *                       type: string
- *                       example: "샘플 비디오 제목"
- *                     video_thumbnail_url:
- *                       type: string
- *                       example: "https://i.ytimg.com/vi/tpUxKppsShg/default.jpg"
- *                     upload_date:
- *                       type: string
- *                       format: date-time
- *                       example: "2024-01-01T00:00:00.000Z"
- *                     channel_id:
- *                       type: string
- *                       example: "UC123456789"
- *                     filtering_keyword:
- *                       type: string
- *                       nullable: true
- *                       example: "노래가 좋다는 댓글"
- *                     comment_classified_at:
- *                       type: string
- *                       format: date-time
- *                       nullable: true
- *                       example: "2024-01-01T00:00:00.000Z"
- *                     created_at:
- *                       type: string
- *                       format: date-time
- *                       example: "2024-01-01T00:00:00.000Z"
- *                     updated_at:
- *                       type: string
- *                       format: date-time
- *                       example: "2024-01-01T00:00:00.000Z"
- *       404:
- *         description: 비디오를 찾을 수 없음
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 success:
- *                   type: boolean
- *                   example: false
- *                 message:
- *                   type: string
- *                   example: "비디오를 찾을 수 없습니다."
- *       500:
- *         description: 서버 오류
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 success:
- *                   type: boolean
- *                   example: false
- *                 message:
- *                   type: string
- *                 error:
- *                   type: string
- */
-// 특정 비디오 상세 정보 조회 API
-router.get('/videos/:video_id', authenticateToken, async (req, res) => {
-  const { video_id } = req.params;
-  const userId = req.user.id;
-
-  try {
-    // 비디오 정보 조회 (채널 소유자 확인 포함)
-    const videoQuery = `
-      SELECT v.*, c.user_id
-      FROM "Video" v
-      JOIN "Channel" c ON v.channel_id = c.id
-      WHERE v.id = $1 AND c.user_id = $2 AND v.is_deleted = false
-    `;
-    
-    const result = await pool.query(videoQuery, [video_id, userId]);
-    
-    if (result.rows.length === 0) {
-      return res.status(404).json({
-        success: false,
-        message: '비디오를 찾을 수 없습니다.'
-      });
-    }
-
-    const video = result.rows[0];
-    
-    // 응답 데이터 구성 (민감한 정보 제외)
-    const videoData = {
-      id: video.id,
-      video_name: video.video_name,
-      video_thumbnail_url: video.video_thumbnail_url,
-      upload_date: video.upload_date,
-      channel_id: video.channel_id,
-      filtering_keyword: video.filtering_keyword,
-      comment_classified_at: video.comment_classified_at,
-      created_at: video.created_at,
-      updated_at: video.updated_at
-    };
-
-    res.status(200).json({
-      success: true,
-      data: videoData
-    });
-  } catch (error) {
-    console.error('비디오 정보 조회 실패:', error.message);
-    res.status(500).json({
-      success: false,
-      message: '비디오 정보 조회 중 오류가 발생했습니다.',
-      error: error.message
-    });
-  }
-});
 
 // 댓글 긍정 비율 계산 함수
 async function calculatePositiveRatio(video_id, pool) {
@@ -185,6 +41,8 @@ async function calculatePositiveRatio(video_id, pool) {
 }
 
 // 영상 썸네일 카테고리 분류 API (라우트 순서 문제 해결을 위해 상단으로 이동)
+const { OpenAI } = require("openai");
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 router.post('/videos/:video_id/classify_category', async (req, res) => {
   const { video_id } = req.params;
@@ -279,8 +137,6 @@ router.get('/videos/thumbnail-categories', authenticateToken, async (req, res) =
   console.log('[DEBUG] AI 분류 API 호출됨, userId:', userId);
   
   try {
-    console.log('[DEBUG] 1. 사용자 인증 확인 완료');
-    console.log('[DEBUG] 2. 채널 정보 조회 시작');
     // 사용자의 채널 정보 가져오기
     const userChannel = await pool.query(
       'SELECT * FROM "Channel" WHERE user_id = $1',
@@ -1810,89 +1666,6 @@ router.post('/videos/:video_id/comments/filter', async (req, res) => {
     });
   }
 });
-
-/**
- * @swagger
- * /api/videos/{video_id}/comments:
- *   get:
- *     summary: 모든 댓글 조회
- *     description: 특정 비디오의 모든 댓글을 조회합니다.
- *     tags: [Comments]
- *     parameters:
- *       - in: path
- *         name: video_id
- *         required: true
- *         schema:
- *           type: string
- *         description: 비디오 ID
- *     responses:
- *       200:
- *         description: 댓글 조회 성공
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 success:
- *                   type: boolean
- *                   example: true
- *                 data:
- *                   type: array
- *                   items:
- *                     type: object
- *                     properties:
- *                       youtube_comment_id:
- *                         type: string
- *                       author_name:
- *                         type: string
- *                       comment:
- *                         type: string
- *                       comment_type:
- *                         type: integer
- *                       comment_date:
- *                         type: string
- *                         format: date-time
- *                       is_filtered:
- *                         type: boolean
- *       500:
- *         description: 서버 오류
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 success:
- *                   type: boolean
- *                   example: false
- *                 message:
- *                   type: string
- *                 error:
- *                   type: string
- */
-// 모든 댓글 조회 API
-router.get('/videos/:video_id/comments', async (req, res) => {
-  const { video_id } = req.params;
-
-  try {
-    const result = await pool.query(
-      'SELECT * FROM "Comment" WHERE video_id = $1 ORDER BY comment_date DESC',
-      [video_id]
-    );
-
-    res.status(200).json({
-      success: true,
-      data: result.rows
-    });
-  } catch (error) {
-    console.error('댓글 조회 실패:', error.message);
-    res.status(500).json({ 
-      success: false, 
-      message: '댓글 조회 실패',
-      error: error.message 
-    });
-  }
-});
-
 
 /**
  * @swagger
