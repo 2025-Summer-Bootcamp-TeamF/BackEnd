@@ -1713,7 +1713,7 @@ router.get('/videos/:video_id/comments', async (req, res) => {
  * @swagger
  * /api/videos/{video_id}/comments/filter/status/{job_id}:
  *   get:
- *     summary: 댓글 필터링 작업 상태 확인
+ *     summary: 댓글 필터링 작업 상태 확인!
  *     tags: [Videos]
  *     parameters:
  *       - in: path
