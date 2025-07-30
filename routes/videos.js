@@ -1684,7 +1684,7 @@ router.post('/videos/:video_id/comments/filter', async (req, res) => {
  *                 error:
  *                   type: string
  */
-// 모든 댓글 조회 API
+// 모든 댓글 조회 API 입니다.
 router.get('/videos/:video_id/comments', async (req, res) => {
   const { video_id } = req.params;
 
