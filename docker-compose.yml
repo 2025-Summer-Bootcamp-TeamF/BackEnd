@@ -44,7 +44,7 @@ services:
       - N8N_API_AUTH_BASIC=false
       - N8N_API_KEY=devkey123
     volumes:
-      - ../n8n-data:/home/node/.n8n
+      - n8n_data:/home/node/.n8n
     networks:
       - app-network
 
@@ -163,8 +163,7 @@ services:
       - app-network
 
 volumes:
-  n8n-data:
-    external: true
+  n8n_data:
   redis_data:
 
 networks:
