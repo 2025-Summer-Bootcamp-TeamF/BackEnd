@@ -36,6 +36,7 @@ const passport = require('./config/passport');
 const app = express();
 const PORT = process.env.PORT || 8000;
 
+app.set('trust proxy', true);
 // CORS 설정
 app.use(cors({
   origin: process.env.FRONTEND_URL || 'http://localhost:5173',
