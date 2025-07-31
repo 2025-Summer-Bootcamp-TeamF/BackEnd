@@ -5,7 +5,7 @@ if ! [ -x "$(command -v docker-compose)" ]; then
   exit 1
 fi
 
-compose_file="docker-compose.prod.yml"
+compose_file="docker-compose.yml"
 
 domains=(api.youtool.ai.kr)
 rsa_key_size=4096
