@@ -10,7 +10,7 @@ compose_file="docker-compose.yml"
 domains=(api.youtool.ai.kr)
 rsa_key_size=4096
 data_path="./certbot"
-email="daha031011" # Adding a valid address is strongly recommended
+email="daha031011@gmail.com" # Adding a valid address is strongly recommended
 staging=0 # Set to 1 if you're testing your setup to avoid hitting request limits
 
 if [ -d "$data_path" ]; then
