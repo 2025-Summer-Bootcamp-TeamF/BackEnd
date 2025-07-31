@@ -7,7 +7,7 @@ fi
 
 compose_file="docker-compose.yml"
 
-domains=(api.youtool.ai.kr)
+domains=(api.cloudsession.cloud)
 rsa_key_size=4096
 data_path="./certbot"
 email="daha031011@gmail.com" # Adding a valid address is strongly recommended
