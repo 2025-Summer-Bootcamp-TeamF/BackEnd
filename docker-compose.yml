@@ -70,7 +70,7 @@ services:
     ports:
       - "5432:5432"
     volumes:
-      - ./pgdata:/var/lib/postgresql/data
+      - pg_data:/var/lib/postgresql/data
       - ./initdb:/docker-entrypoint-initdb.d
     networks:
       - app-network
@@ -168,6 +168,7 @@ volumes:
   redis_data:
   grafana_provisioning:
   grafana_data:
+  pg_data:
 
 networks:
   app-network:
