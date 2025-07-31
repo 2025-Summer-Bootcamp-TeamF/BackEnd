@@ -108,8 +108,8 @@ services:
     ports:
       - "3000:3000"
     volumes:
-      - ./grafana/provisioning:/etc/grafana/provisioning
-      - ./grafana/data:/var/lib/grafana
+      - grafana_provisioning:/etc/grafana/provisioning
+      - grafana_data:/var/lib/grafana
     networks:
       - app-network
 
@@ -165,6 +165,8 @@ services:
 volumes:
   n8n_data:
   redis_data:
+  grafana_provisioning:
+  grafana_data:
 
 networks:
   app-network:
