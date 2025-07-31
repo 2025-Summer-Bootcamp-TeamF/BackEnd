@@ -43,7 +43,7 @@ services:
       - N8N_API_AUTH_ACTIVE=true
       - N8N_API_AUTH_BASIC=false
       - N8N_API_KEY=devkey123
-      - N8N_SECURE_COOKIE to false
+      - N8N_SECURE_COOKIE=false
     volumes:
       - n8n_data:/home/node/.n8n
     networks:
