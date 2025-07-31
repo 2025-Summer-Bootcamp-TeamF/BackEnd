@@ -47,6 +47,7 @@ services:
       - n8n_data:/home/node/.n8n
     networks:
       - app-network
+    command: ["n8n", "start"]
 
   redis:
     image: redis:alpine
