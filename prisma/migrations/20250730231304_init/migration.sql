@@ -1,8 +1,8 @@
 -- CreateEnum
-CREATE TYPE "Status" AS ENUM ('approved', 'rejected', 'deleted', 'none');
+CREATE TYPE "public"."Status" AS ENUM ('approved', 'rejected', 'deleted', 'none');
 
 -- CreateTable
-CREATE TABLE "User" (
+CREATE TABLE "public"."User" (
     "id" SERIAL NOT NULL,
     "youtube_user_id" VARCHAR(30) NOT NULL,
     "email" TEXT NOT NULL,
@@ -14,16 +14,17 @@ CREATE TABLE "User" (
 );
 
 -- CreateTable
-CREATE TABLE "Category" (
+CREATE TABLE "public"."Category" (
     "id" SERIAL NOT NULL,
     "category" VARCHAR(20) NOT NULL,
+    "description" TEXT,
     "created_at" TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     CONSTRAINT "Category_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
-CREATE TABLE "Channel" (
+CREATE TABLE "public"."Channel" (
     "id" SERIAL NOT NULL,
     "user_id" INTEGER,
     "channel_name" VARCHAR(20),
@@ -38,7 +39,7 @@ CREATE TABLE "Channel" (
 );
 
 -- CreateTable
-CREATE TABLE "Other_channel" (
+CREATE TABLE "public"."Other_channel" (
     "id" SERIAL NOT NULL,
     "user_id" INTEGER NOT NULL,
     "channel_id" INTEGER NOT NULL,
@@ -47,7 +48,7 @@ CREATE TABLE "Other_channel" (
 );
 
 -- CreateTable
-CREATE TABLE "Video" (
+CREATE TABLE "public"."Video" (
     "id" TEXT NOT NULL,
     "channel_id" INTEGER NOT NULL,
     "video_name" TEXT,
@@ -55,15 +56,18 @@ CREATE TABLE "Video" (
     "upload_date" TIMESTAMP(6),
     "video_type" BOOLEAN,
     "video_link" TEXT,
+    "duration" INTEGER,
     "is_deleted" BOOLEAN NOT NULL DEFAULT false,
     "created_at" TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updated_at" TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "comment_classified_at" TIMESTAMP(6) DEFAULT '2000-01-01 00:00:00'::timestamp without time zone,
+    "filtering_keyword" VARCHAR(255),
 
     CONSTRAINT "Video_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
-CREATE TABLE "Video_category" (
+CREATE TABLE "public"."Video_category" (
     "id" SERIAL NOT NULL,
     "category_id" INTEGER NOT NULL,
     "video_id" VARCHAR(20) NOT NULL,
@@ -72,7 +76,7 @@ CREATE TABLE "Video_category" (
 );
 
 -- CreateTable
-CREATE TABLE "Channel_snapshot" (
+CREATE TABLE "public"."Channel_snapshot" (
     "id" SERIAL NOT NULL,
     "channel_id" INTEGER,
     "subscriber" INTEGER,
@@ -89,7 +93,7 @@ CREATE TABLE "Channel_snapshot" (
 );
 
 -- CreateTable
-CREATE TABLE "Video_snapshot" (
+CREATE TABLE "public"."Video_snapshot" (
     "id" SERIAL NOT NULL,
     "video_id" VARCHAR(20) NOT NULL,
     "view_count" INTEGER,
@@ -103,7 +107,7 @@ CREATE TABLE "Video_snapshot" (
 );
 
 -- CreateTable
-CREATE TABLE "Comment" (
+CREATE TABLE "public"."Comment" (
     "id" SERIAL NOT NULL,
     "author_name" TEXT,
     "author_id" VARCHAR(30),
@@ -121,10 +125,11 @@ CREATE TABLE "Comment" (
 );
 
 -- CreateTable
-CREATE TABLE "Comment_summary" (
+CREATE TABLE "public"."Comment_summary" (
     "id" SERIAL NOT NULL,
     "video_id" VARCHAR(20) NOT NULL,
     "summary" TEXT,
+    "summary_title" TEXT,
     "positive_ratio" DOUBLE PRECISION,
     "is_deleted" BOOLEAN NOT NULL DEFAULT false,
     "created_at" TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -133,34 +138,37 @@ CREATE TABLE "Comment_summary" (
 );
 
 -- CreateIndex
-CREATE UNIQUE INDEX "Other_channel_user_id_channel_id_key" ON "Other_channel"("user_id", "channel_id");
+CREATE UNIQUE INDEX "Other_channel_user_id_channel_id_key" ON "public"."Other_channel"("user_id", "channel_id");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "Comment_youtube_comment_id_key" ON "public"."Comment"("youtube_comment_id");
 
 -- AddForeignKey
-ALTER TABLE "Channel" ADD CONSTRAINT "Channel_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "User"("id") ON DELETE NO ACTION ON UPDATE NO ACTION;
+ALTER TABLE "public"."Channel" ADD CONSTRAINT "Channel_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "public"."User"("id") ON DELETE NO ACTION ON UPDATE NO ACTION;
 
 -- AddForeignKey
-ALTER TABLE "Other_channel" ADD CONSTRAINT "Other_channel_channel_id_fkey" FOREIGN KEY ("channel_id") REFERENCES "Channel"("id") ON DELETE NO ACTION ON UPDATE NO ACTION;
+ALTER TABLE "public"."Other_channel" ADD CONSTRAINT "Other_channel_channel_id_fkey" FOREIGN KEY ("channel_id") REFERENCES "public"."Channel"("id") ON DELETE NO ACTION ON UPDATE NO ACTION;
 
 -- AddForeignKey
-ALTER TABLE "Other_channel" ADD CONSTRAINT "Other_channel_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "User"("id") ON DELETE NO ACTION ON UPDATE NO ACTION;
+ALTER TABLE "public"."Other_channel" ADD CONSTRAINT "Other_channel_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "public"."User"("id") ON DELETE NO ACTION ON UPDATE NO ACTION;
 
 -- AddForeignKey
-ALTER TABLE "Video" ADD CONSTRAINT "Video_channel_id_fkey" FOREIGN KEY ("channel_id") REFERENCES "Channel"("id") ON DELETE NO ACTION ON UPDATE NO ACTION;
+ALTER TABLE "public"."Video" ADD CONSTRAINT "Video_channel_id_fkey" FOREIGN KEY ("channel_id") REFERENCES "public"."Channel"("id") ON DELETE NO ACTION ON UPDATE NO ACTION;
 
 -- AddForeignKey
-ALTER TABLE "Video_category" ADD CONSTRAINT "Video_category_category_id_fkey" FOREIGN KEY ("category_id") REFERENCES "Category"("id") ON DELETE NO ACTION ON UPDATE NO ACTION;
+ALTER TABLE "public"."Video_category" ADD CONSTRAINT "Video_category_category_id_fkey" FOREIGN KEY ("category_id") REFERENCES "public"."Category"("id") ON DELETE NO ACTION ON UPDATE NO ACTION;
 
 -- AddForeignKey
-ALTER TABLE "Video_category" ADD CONSTRAINT "Video_category_video_id_fkey" FOREIGN KEY ("video_id") REFERENCES "Video"("id") ON DELETE NO ACTION ON UPDATE NO ACTION;
+ALTER TABLE "public"."Video_category" ADD CONSTRAINT "Video_category_video_id_fkey" FOREIGN KEY ("video_id") REFERENCES "public"."Video"("id") ON DELETE NO ACTION ON UPDATE NO ACTION;
 
 -- AddForeignKey
-ALTER TABLE "Channel_snapshot" ADD CONSTRAINT "Channel_snapshot_channel_id_fkey" FOREIGN KEY ("channel_id") REFERENCES "Channel"("id") ON DELETE NO ACTION ON UPDATE NO ACTION;
+ALTER TABLE "public"."Channel_snapshot" ADD CONSTRAINT "Channel_snapshot_channel_id_fkey" FOREIGN KEY ("channel_id") REFERENCES "public"."Channel"("id") ON DELETE NO ACTION ON UPDATE NO ACTION;
 
 -- AddForeignKey
-ALTER TABLE "Video_snapshot" ADD CONSTRAINT "Video_snapshot_video_id_fkey" FOREIGN KEY ("video_id") REFERENCES "Video"("id") ON DELETE NO ACTION ON UPDATE NO ACTION;
+ALTER TABLE "public"."Video_snapshot" ADD CONSTRAINT "Video_snapshot_video_id_fkey" FOREIGN KEY ("video_id") REFERENCES "public"."Video"("id") ON DELETE NO ACTION ON UPDATE NO ACTION;
 
 -- AddForeignKey
-ALTER TABLE "Comment" ADD CONSTRAINT "Comment_video_id_fkey" FOREIGN KEY ("video_id") REFERENCES "Video"("id") ON DELETE NO ACTION ON UPDATE NO ACTION;
+ALTER TABLE "public"."Comment" ADD CONSTRAINT "Comment_video_id_fkey" FOREIGN KEY ("video_id") REFERENCES "public"."Video"("id") ON DELETE NO ACTION ON UPDATE NO ACTION;
 
 -- AddForeignKey
-ALTER TABLE "Comment_summary" ADD CONSTRAINT "Comment_summary_video_id_fkey" FOREIGN KEY ("video_id") REFERENCES "Video"("id") ON DELETE NO ACTION ON UPDATE NO ACTION;
+ALTER TABLE "public"."Comment_summary" ADD CONSTRAINT "Comment_summary_video_id_fkey" FOREIGN KEY ("video_id") REFERENCES "public"."Video"("id") ON DELETE NO ACTION ON UPDATE NO ACTION;
